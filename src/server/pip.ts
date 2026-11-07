@@ -39,7 +39,7 @@ import {
     type Tx,
 } from "@earendil-works/pi-durable";
 import type { PocketApp } from "./app.ts";
-import { type BotInstall, installSkills, readBot } from "./bots.ts";
+import { type BotInstall, checkSkills, installSkills, readBot } from "./bots.ts";
 import { writeInstructions } from "./commands.ts";
 import type { User } from "./config.ts";
 import { AuthorsDoc, FollowsDoc, PipAskedDoc, SessionsDoc } from "./docs.ts";
@@ -167,6 +167,13 @@ type StartRequest = {
 };
 
 const finished = { status: "terminal", outcome: { status: "completed", result: null } } as const;
+
+/** Where a session starts: a folder or a repository, never both. */
+function requireOnePlace(request: StartRequest): void {
+    if (request.folder !== undefined && request.repo !== undefined) {
+        throw new Error("Give a folder or a repository, not both.");
+    }
+}
 
 /** A session's words, fenced for PiP; a fence inside them cannot end the fence early. */
 export function fenced(text: string): string {
@@ -1078,8 +1085,9 @@ export class Pip {
 
     /**
      * Start a session from a predefined bot (`bots.ts`): its instructions, model, thinking level, and skills, before its
-     * first message runs. The bot is read and checked first, and so is its model, so a bot that cannot be given in full
-     * leaves no session behind. Its skills go into the folder the session works in, a worktree's own when it has one.
+     * first message runs. The bot is read and checked first, and so are its model and the folders its skills go in, so a
+     * bot that cannot be given in full leaves no session behind. Only a worktree's folder is made with the session, and
+     * is checked after it (`#worktreeSkills`).
      */
     async startBot(
         pipId: ConversationId,
@@ -1105,16 +1113,61 @@ export class Pip {
             );
         }
 
-        const id = await this.#startSession(pipId, user, request, model);
+        // A worktree's folder is made with the session: nothing can be read there before the session is made.
+        const place = request.worktree === true ? undefined : await this.#placeOf(pipId, request);
+
+        if (place !== undefined) {
+            checkSkills(app.dataDir, place, bot.skills);
+        }
+
+        const id = await this.#startSession(
+            pipId,
+            user,
+            // A repository's checkout is made once here, and the session works in it: never cloned again.
+            request.repo === undefined || place === undefined
+                ? request
+                : { ...request, folder: place, repo: undefined },
+            model,
+        );
+        const folder = app.cwdOf(id);
+
+        if (place === undefined) {
+            this.#worktreeSkills(id, folder, bot.skills);
+        }
 
         await writeInstructions(app, id, bot.instructions);
-        const folder = app.cwdOf(id);
 
         return {
             id,
             folder: homePath(folder),
             ...installSkills(app.dataDir, folder, bot.skills),
         };
+    }
+
+    /**
+     * The folder a session would work in, before it is made: the repository's checkout or the folder, resolved as
+     * `createSession` resolves it. A session with a worktree of its own has none until it is made.
+     */
+    async #placeOf(pipId: ConversationId, request: StartRequest): Promise<string> {
+        requireOnePlace(request);
+
+        return request.repo === undefined
+            ? this.#app.resolveCwd(request.folder ?? this.#app.defaultCwd)
+            : this.checkout(pipId, request.repo);
+    }
+
+    /**
+     * A worktree's folder, once the session has made it: a skill that cannot go there stops the call, and the error says
+     * which session was made, so a session left without its skills is never taken for a success.
+     */
+    #worktreeSkills(id: ConversationId, folder: string, skills: readonly string[]): void {
+        try {
+            checkSkills(this.#app.dataDir, folder, skills);
+        } catch (error) {
+            throw new Error(
+                `Session /s/${String(id)} was made in ${homePath(folder)}, without the bot's skills: ${describe(error)} Fix that folder, and start the bot again, or stop the session.`,
+            );
+        }
     }
 
     /**
@@ -1135,10 +1188,7 @@ export class Pip {
             `${request.title ?? ""}\n${request.message ?? ""}`,
         );
 
-        if (request.folder !== undefined && request.repo !== undefined) {
-            throw new Error("Give a folder or a repository, not both.");
-        }
-
+        requireOnePlace(request);
         this.#count(user, "start", STARTS_PER_HOUR);
         const folder =
             request.repo === undefined ? request.folder : await this.checkout(pipId, request.repo);

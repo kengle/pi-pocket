@@ -13,6 +13,7 @@ import {
     scriptedModel,
 } from "./helpers.ts";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -170,6 +171,7 @@ test("a bot never writes over a folder of the person's own, and names it", async
     const id = await pip();
     const folder = folderOf("taken");
     const mine = join(folder, ".pi", "skills", "polish", "SKILL.md");
+    const before = app.sessions().length;
 
     bot("taken", { skills: ["polish"], model: "faux/faux-1" });
     mkdirSync(join(folder, ".pi", "skills", "polish"), { recursive: true });
@@ -179,7 +181,41 @@ test("a bot never writes over a folder of the person's own, and names it", async
         app.pip.startBot(id, { bot: "taken", folder }),
         /already in this session's folder, as \.pi\/skills\/polish, with files that are not the bot's/,
     );
+    assert.equal(app.sessions().length, before, "no session made");
     assert.equal(readFileSync(mine, "utf8"), "Mine, and not the bot's.\n");
+});
+
+test("a worktree's skills are checked once its folder is made, and the error names the session", async () => {
+    const id = await pip();
+    const repo = folderOf("repo");
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+
+    mkdirSync(repo, { recursive: true });
+    git("init", "-q");
+    writeFileSync(join(repo, "README.md"), "A repository.\n");
+    git("add", "README.md");
+    git("-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "first");
+    // A worktree starts with the repository's new files: this skill folder comes with them, and is not the bot's.
+    mkdirSync(join(repo, ".pi", "skills", "polish"), { recursive: true });
+    writeFileSync(join(repo, ".pi", "skills", "polish", "SKILL.md"), "Mine.\n");
+
+    bot("worktree", { skills: ["polish"], model: "faux/faux-1" });
+
+    const before = app.sessions().length;
+
+    await assert.rejects(
+        app.pip.startBot(id, { bot: "worktree", folder: repo, worktree: true }),
+        /Session \/s\/\d+ was made in .*without the bot's skills: .*already in this session's folder/,
+    );
+
+    const made = app.sessions().find((session) => session.bot === "worktree");
+
+    assert.equal(app.sessions().length, before + 1, "the session was made, as the error says");
+    assert.ok(made?.worktree !== undefined, "with its worktree");
+    assert.equal(
+        (await app.agentState(made!.id as unknown as ConversationId))?.instructions,
+        undefined,
+    );
 });
 
 test("a bot without a model makes no session", async () => {

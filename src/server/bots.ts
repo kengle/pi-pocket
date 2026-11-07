@@ -4,7 +4,8 @@
  * level); and a pool of skills in `bots/skills/`, each a folder with a `SKILL.md`. A bot is read and checked before any
  * session is made, so a bot that cannot be given in full leaves none behind. Its skills are then copied into the
  * session's folder as `.pi/skills/<name>/`, where Pi loads them, and a folder already there with other files is never
- * overwritten. Whether the model works here is for the caller to check: it knows the models signed in.
+ * overwritten: `checkSkills` says before a session is made that they can go in. Whether the model works here is for the
+ * caller to check: it knows the models signed in.
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -184,6 +185,30 @@ function sameFolder(left: string, right: string): boolean {
 }
 
 /**
+ * The error for a skill whose folder in `cwd` is not the bot's own: nothing is overwritten, and the folder is named.
+ */
+function conflict(name: string, target: string, cwd: string): HttpError {
+    return new HttpError(
+        409,
+        `The skill ${quoted(name)} is already in this session's folder, as ${displayPath(target, cwd)}, with files that are not the bot's: nothing is overwritten. Move it away, or start the bot in another folder.`,
+    );
+}
+
+/**
+ * Whether a bot's skills can go into `cwd`: each one either not there yet, or there as the bot has it. One whose folder
+ * holds other files is an error that names it. This reads only, so a caller can ask before it makes a session.
+ */
+export function checkSkills(dataDir: string, cwd: string, skills: readonly string[]): void {
+    for (const name of skills) {
+        const target = join(cwd, ".pi", "skills", name);
+
+        if (existsSync(target) && !sameFolder(join(dataDir, "bots", "skills", name), target)) {
+            throw conflict(name, target, cwd);
+        }
+    }
+}
+
+/**
  * A bot's skills, in a session's folder: each one copied from the pool to `<cwd>/.pi/skills/<name>/`. A folder already
  * there as the bot has it is skipped, since the session has that skill already; one with files of its own stops the
  * call, naming it, because a folder in someone's project is theirs to keep.
@@ -204,10 +229,7 @@ export function installSkills(dataDir: string, cwd: string, skills: readonly str
         } else if (sameFolder(source, target)) {
             skipped.push(name);
         } else {
-            throw new HttpError(
-                409,
-                `The skill ${quoted(name)} is already in this session's folder, as ${displayPath(target, cwd)}, with files that are not the bot's: nothing is overwritten. Move it away, or start the bot in another folder.`,
-            );
+            throw conflict(name, target, cwd);
         }
     }
 
