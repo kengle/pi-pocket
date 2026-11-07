@@ -175,15 +175,46 @@ export const dealtWith = (name: string): string => {
     return `dealt with the failure of subagent “\u2068${shown}\u2069”`;
 };
 
+/**
+ * What Pi is told in every request of session `id`, after its own system prompt: written as `text`, or cleared by empty
+ * text, and nothing written when it says what it says. A bot gives its session its own the same way (`bots.ts`).
+ * Whether it changed anything; too long is a 413, as it is for a person.
+ */
+export async function writeInstructions(
+    app: PocketApp,
+    id: ConversationId,
+    text: string,
+): Promise<boolean> {
+    const instructions = text.trim();
+
+    if (instructions.length > MAX_INSTRUCTIONS) {
+        throw new HttpError(413, `Instructions are limited to ${MAX_INSTRUCTIONS} characters`);
+    }
+
+    const before = (await app.agentState(id))?.instructions ?? "";
+
+    if (instructions === before) {
+        return false;
+    }
+
+    await (
+        await app.conversation(id)
+    ).configure({ instructions: instructions === "" ? null : instructions }, context);
+
+    return true;
+}
+
 /** What dismissing a subagent's failure came to: `newer` when it failed again since the failure seen. */
 type Dismissal = { dismissed: boolean; newer?: true };
 /** The extension that makes plan mode block changes; without it, plan mode would do nothing. */
 const PLAN_EXTENSION = "pocket-plan";
 /** What Pi is told when someone approves its plan. */
 const PLAN_APPROVED = "The plan is approved. Go ahead and carry it out.";
-/** Longest handoff note for a new context, and longest instructions for Pi. */
+/** Longest handoff note for a new context. */
 const MAX_HANDOFF = 20_000;
-const MAX_INSTRUCTIONS = 8000;
+
+/** Longest instructions for Pi: what a person sets, and what a bot gives its session (`bots.ts`). */
+export const MAX_INSTRUCTIONS = 8000;
 
 /** Where a new session works: a folder, and the worktree it is in when the session has one of its own. */
 type Place = { cwd: string; worktree?: Worktree; skipped: string[] };
@@ -1783,19 +1814,10 @@ export class Commands {
 
         const instructions = (optionalText(text, "instructions") ?? "").trim();
 
-        if (instructions.length > MAX_INSTRUCTIONS) {
-            throw new HttpError(413, `Instructions are limited to ${MAX_INSTRUCTIONS} characters`);
-        }
-
-        const before = (await app.agentState(id))?.instructions ?? "";
-
-        if (instructions === before) {
+        if (!(await writeInstructions(app, id, instructions))) {
             return;
         }
 
-        await (
-            await app.conversation(id)
-        ).configure({ instructions: instructions === "" ? null : instructions }, context);
         await app.collab.activity(
             id,
             user,

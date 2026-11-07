@@ -150,6 +150,7 @@ const DID = {
     sessions: { verb: "looked over sessions" },
     session_read: { verb: "read", noun: "session", by: "session" },
     session_start: { verb: "started", noun: "session" },
+    bot_start: { verb: "started", noun: "session" },
     session_send: { verb: "messaged", noun: "session", by: "session" },
     session_follow: { verb: "followed", noun: "session", by: "session" },
     session_stop: { verb: "stopped", noun: "session", by: "session" },

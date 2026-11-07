@@ -76,6 +76,7 @@ const OWN_TOOLS = new Set([
     "sessions",
     "session_read",
     "session_start",
+    "bot_start",
     "session_send",
     "session_follow",
     "session_stop",

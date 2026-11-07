@@ -16,7 +16,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import {
+    type AssistantMessage,
+    clampThinkingLevel,
+    type ModelThinkingLevel,
+} from "@earendil-works/pi-ai";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
@@ -28,12 +32,15 @@ import {
     defineTask,
     InboxDoc,
     LiveDoc,
+    type ModelRef,
     ResetEntry,
     type Task,
     type TaskRuntime,
     type Tx,
 } from "@earendil-works/pi-durable";
 import type { PocketApp } from "./app.ts";
+import { type BotInstall, installSkills, readBot } from "./bots.ts";
+import { writeInstructions } from "./commands.ts";
 import type { User } from "./config.ts";
 import { AuthorsDoc, FollowsDoc, PipAskedDoc, SessionsDoc } from "./docs.ts";
 import { presentationOptions, presentationPip } from "./entry-presentation.ts";
@@ -132,12 +139,32 @@ export type PipSession = {
     archived: boolean;
     model?: string;
     branch?: string;
+    /** The bot that made it (`bots.ts`); absent, no bot did. */
+    bot?: string;
     updatedAt: number;
     subagents?: string;
 };
 
+/** A session a bot started: where it works, and the skills its folder got (`startBot`). */
+export type BotStart = { id: ConversationId; folder: string } & BotInstall;
+
 /** What a tab's PiP button shows: whether PiP works, and when it last answered. */
 export type PipState = { id: number; busy: boolean; endedAt?: number };
+
+/** What PiP starts a session with: where, how, and on what model and thinking level, and its first message. */
+type StartRequest = {
+    folder?: string;
+    repo?: string;
+    title?: string;
+    worktree?: boolean;
+    /** A model its person named (`session_start`), as they wrote it: checked, and no session without it. */
+    model?: string;
+    /** The thinking level to start at (`bot_start`), lowered to one that model has. */
+    thinking?: ModelThinkingLevel;
+    /** The bot that starts it (`startBot`): no model from a person, and kept in the session's entry. */
+    bot?: string;
+    message?: string;
+};
 
 const finished = { status: "terminal", outcome: { status: "completed", result: null } } as const;
 
@@ -831,7 +858,13 @@ export class Pip {
     /** The sessions PiP's person can see, newest first. */
     sessions(
         pipId: ConversationId,
-        filter: { query?: string; state?: string; archived?: boolean; limit?: number } = {},
+        filter: {
+            query?: string;
+            state?: string;
+            archived?: boolean;
+            limit?: number;
+            bot?: string;
+        } = {},
     ): { sessions: PipSession[]; more: number; folders: string[] } {
         const app = this.#app;
         const user = this.#person(pipId);
@@ -846,6 +879,7 @@ export class Pip {
                 folder: homePath(app.cwdOf(session.id as unknown as ConversationId)),
                 archived: session.archived === true,
                 ...(session.model === undefined ? {} : { model: session.model }),
+                ...(session.bot === undefined ? {} : { bot: session.bot }),
                 ...(session.worktree === undefined ? {} : { branch: session.worktree.branch }),
                 updatedAt: session.updatedAt,
                 ...(counts === undefined
@@ -872,6 +906,7 @@ export class Pip {
             (session) =>
                 (filter.archived === true ? session.archived : !session.archived) &&
                 (filter.state === undefined || session.state === filter.state) &&
+                (filter.bot === undefined || session.bot === filter.bot) &&
                 words.every((word) =>
                     `${session.title} ${session.folder} ${session.branch ?? ""}`
                         .toLowerCase()
@@ -1030,24 +1065,69 @@ export class Pip {
      * named it. Its first message goes with `send`, so a replayed call that made the session sends it once; it is checked
      * here first (`message`), so a message that names a model nobody chose leaves no session behind.
      */
-    async start(
-        pipId: ConversationId,
-        request: {
-            folder?: string;
-            repo?: string;
-            title?: string;
-            worktree?: boolean;
-            model?: string;
-            message?: string;
-        },
-    ): Promise<ConversationId> {
-        const app = this.#app;
+    async start(pipId: ConversationId, request: StartRequest): Promise<ConversationId> {
         const user = this.#person(pipId);
         // Before anything is made: a model that is not there, or that nobody chose, leaves no session behind.
         const model =
             request.model === undefined
                 ? undefined
                 : await this.#personsModel(pipId, user, request.model);
+
+        return this.#startSession(pipId, user, request, model);
+    }
+
+    /**
+     * Start a session from a predefined bot (`bots.ts`): its instructions, model, thinking level, and skills, before its
+     * first message runs. The bot is read and checked first, and so is its model, so a bot that cannot be given in full
+     * leaves no session behind. Its skills go into the folder the session works in, a worktree's own when it has one.
+     */
+    async startBot(
+        pipId: ConversationId,
+        request: StartRequest & { bot: string },
+    ): Promise<BotStart> {
+        const app = this.#app;
+        const user = this.#person(pipId);
+        const bot = readBot(app.dataDir, request.bot);
+        const found = findModel(app.models, bot.model);
+
+        if (found === undefined) {
+            throw new Error(
+                `${bot.model} is not a model signed in here, which the bot ${quoted(request.bot)} names: tell your person which model to put there.`,
+            );
+        }
+
+        const model = { provider: found.provider, modelId: found.id };
+        const problem = await app.providers.problem(model, true);
+
+        if (problem !== undefined) {
+            throw new Error(
+                `${found.provider}/${found.id} cannot be used now: ${problem}. The bot ${quoted(request.bot)} runs on it: tell your person, and start the session when it works again.`,
+            );
+        }
+
+        const id = await this.#startSession(pipId, user, request, model);
+
+        await writeInstructions(app, id, bot.instructions);
+        const folder = app.cwdOf(id);
+
+        return {
+            id,
+            folder: homePath(folder),
+            ...installSkills(app.dataDir, folder, bot.skills),
+        };
+    }
+
+    /**
+     * The session itself, on a model already checked: PiP's person's, or a bot's. Its thinking level is lowered to one
+     * that model has, and a bot's name goes into the session's entry, where the session list reads it.
+     */
+    async #startSession(
+        pipId: ConversationId,
+        user: User,
+        request: StartRequest,
+        model: ModelRef | undefined,
+    ): Promise<ConversationId> {
+        const app = this.#app;
 
         await this.#requireNoModelChoice(
             pipId,
@@ -1062,6 +1142,13 @@ export class Pip {
         this.#count(user, "start", STARTS_PER_HOUR);
         const folder =
             request.repo === undefined ? request.folder : await this.checkout(pipId, request.repo);
+        const chosen =
+            model === undefined ? undefined : app.models.getModel(model.provider, model.modelId);
+        const thinking =
+            request.thinking === undefined || chosen === undefined
+                ? request.thinking
+                : clampThinkingLevel(chosen, request.thinking);
+        const bot = request.bot;
         const { id } = await app.commands.createSession(
             user,
             {
@@ -1069,12 +1156,24 @@ export class Pip {
                 ...(request.title === undefined ? {} : { title: request.title }),
                 worktree: request.worktree === true,
             },
-            { projectDefaults: model === undefined },
-        );
+            {
+                projectDefaults: model === undefined,
+                ...(model === undefined ? {} : { model }),
+                ...(thinking === undefined ? {} : { thinkingLevel: thinking }),
+                ...(bot === undefined
+                    ? {}
+                    : {
+                          init: async (tx: Tx, id: ConversationId) => {
+                              const sessions = await tx.doc(SessionsDoc);
+                              const entry = sessions.items[String(id)];
 
-        if (model !== undefined) {
-            await app.commands.configure(id, user, { model });
-        }
+                              if (entry !== undefined) {
+                                  entry.bot = bot;
+                              }
+                          },
+                      }),
+            },
+        );
 
         // PiP made it, and knows what it is doing: nothing yet.
         this.#looked(pipId, id);

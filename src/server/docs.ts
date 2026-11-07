@@ -43,6 +43,8 @@ export type SessionMeta = {
     worktree?: Worktree;
     /** The session of Pi's in the terminal this one continues, and how many messages its file had then. */
     fromPi?: { session: string; count: number };
+    /** The bot that started this session (`bots.ts`), by its name in the data folder's `bots/`: none, no bot did. */
+    bot?: string;
     /**
      * The id of the person whose PiP this is: their assistant, which looks after their other sessions (`pip.ts`). PiP is
      * kept out of the session list; an older Pi Pocket, which does not know this field, lists it as a session.

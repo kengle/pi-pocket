@@ -6,6 +6,7 @@
  */
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import type { Context } from "@earendil-works/chord";
 import { arr, bool, num, obj, opt, str, union } from "@earendil-works/pi-schema";
 import {
     CompactionTask,
@@ -14,6 +15,7 @@ import {
     defineTool,
     hook,
     section,
+    type ToolExecutionApi,
     type ToolRegistration,
     wrapTool,
 } from "@earendil-works/pi-durable";
@@ -21,7 +23,15 @@ import type { PrWatch, RepoEvent, Schedule } from "../docs.ts";
 import { quoted } from "../fence.ts";
 import type { PocketHost } from "../host.ts";
 import { withoutInline } from "./artifacts.ts";
-import { ago, PIP_EXTENSION, PIP_NAME, REPORT_HEAD, SESSION_CLOSE, SESSION_OPEN } from "../pip.ts";
+import {
+    ago,
+    type BotStart,
+    PIP_EXTENSION,
+    PIP_NAME,
+    REPORT_HEAD,
+    SESSION_CLOSE,
+    SESSION_OPEN,
+} from "../pip.ts";
 import { snippet } from "../projection.ts";
 import type { RepoWatchView } from "../repo-watches.ts";
 import { endedText } from "../watches.ts";
@@ -29,6 +39,18 @@ import { describeMoment, describeRepeat, WHEN_HELP } from "../when.ts";
 import { literal } from "../tool-schema.ts";
 
 const reply = (text: string) => ({ output: [{ type: "text" as const, text }] });
+
+/** What PiP's person reads of a bot's session: the folder it works in, and the skills it got there. */
+function botFacts(bot: string, { folder, installed, skipped }: BotStart): string {
+    const skills = [
+        ...(installed.length === 0 ? [] : [`Installed skills: ${installed.join(", ")}.`]),
+        ...(skipped.length === 0
+            ? []
+            : [`Already there, as the bot has them: ${skipped.join(", ")}.`]),
+    ];
+
+    return ` Bot ${quoted(bot)}: folder ${snippet(folder, 300)}. ${skills.length === 0 ? "It has no skills." : skills.join(" ")}`;
+}
 
 /**
  * The owner's standing instructions for PiP, from `pip.md` in the data folder, read again when the file changes;
@@ -216,6 +238,7 @@ export default function createPip(host: PocketHost) {
             {
                 query: opt(str({ description: "Words to find in titles, folders, or branches" })),
                 state: opt(union([literal("working"), literal("needs approval"), literal("idle")])),
+                bot: opt(str({ description: "Only the sessions this bot started" })),
                 archived: opt(bool({ description: "List archived sessions instead" })),
                 limit: opt(num({ description: "At most this many (default 25)" })),
             },
@@ -279,33 +302,102 @@ export default function createPip(host: PocketHost) {
     const github =
         typeof host.pip.watchPr === "function" && typeof host.pip.addRepoWatch === "function";
 
+    /** Where a new session works and what it is told first: `session_start` and `bot_start` both take these. */
+    const startFields = {
+        message: opt(str({ description: "The task for Pi in the new session, self-contained" })),
+        folder: opt(str({ description: "Absolute or ~/ path of the folder to work in" })),
+        repo: opt(
+            str({
+                description:
+                    "Instead of folder: a GitHub repository (owner/name, or its address) to work in: its checkout on this machine, or a fresh clone",
+            }),
+        ),
+        title: opt(
+            str({
+                description: "A short title; without one, the first message names it",
+            }),
+        ),
+        worktree: opt(
+            bool({
+                description:
+                    "Work in a git worktree of its own, on a new branch, apart from the folder",
+            }),
+        ),
+    };
+
+    /** What both start tools take: a bot's name, when a bot starts the session. */
+    type StartArgs = {
+        message?: string;
+        folder?: string;
+        repo?: string;
+        title?: string;
+        worktree?: boolean;
+        model?: string;
+        bot?: string;
+        report?: boolean;
+    };
+
+    /**
+     * Start a session and send its first message: what `session_start` and `bot_start` do, so a bot's session is made
+     * as any other. The bot it names is read and checked first, and gives the session its instructions, model, thinking
+     * level, and skills, all before the first message runs.
+     */
+    const startSession = async (args: StartArgs, api: ToolExecutionApi, context: Context) => {
+        // A server started before PiP could find checkouts would start in the default folder instead.
+        if (args.repo !== undefined && !github) {
+            throw new Error(
+                "Starting a session from a repository needs a restart of the server (menu → Restart server); give a folder meanwhile.",
+            );
+        }
+
+        let id = await api.memo<number>("pip.session", context);
+        // What a bot came to, on the call that made the session; a replayed call finds it made.
+        let facts = "";
+
+        if (id === undefined) {
+            if (args.bot === undefined) {
+                const made = await host.pip.start(api.conversationId, args);
+
+                id = await api.memo("pip.session", Number(made), context);
+            } else {
+                const made = await host.pip.startBot(api.conversationId, {
+                    ...args,
+                    bot: args.bot,
+                });
+
+                id = await api.memo("pip.session", Number(made.id), context);
+                facts = botFacts(args.bot, made);
+            }
+        }
+
+        const link = `/s/${String(id)}`;
+
+        if (args.message === undefined || args.message.trim() === "") {
+            return reply(`Started session ${link}.${facts}`);
+        }
+
+        const sent = await host.pip.send(api.conversationId, id, args.message, false, key(api), {
+            started: true,
+        });
+
+        if (args.report === false) {
+            return reply(`Started session ${link} and sent the message.${facts}`);
+        }
+
+        await host.pip.follow(api.conversationId, id, sent.requestId, key(api));
+
+        return reply(
+            `Started session ${link} and sent the message; a report comes back when Pi answers.${facts}`,
+        );
+    };
+
     const start = defineTool({
         name: "session_start",
         description:
             "Delegate requested hands-on work to Pi in a new session, with a self-contained first message. Use this when the task needs tools you do not have yourself; the person need not explicitly ask for a new session. Without a message, just creates the session. The folder defaults to the server's default folder; pick one from the folders the sessions tool lists, or any folder on this machine.",
         parameters: obj(
             {
-                message: opt(
-                    str({ description: "The task for Pi in the new session, self-contained" }),
-                ),
-                folder: opt(str({ description: "Absolute or ~/ path of the folder to work in" })),
-                repo: opt(
-                    str({
-                        description:
-                            "Instead of folder: a GitHub repository (owner/name, or its address) to work in: its checkout on this machine, or a fresh clone",
-                    }),
-                ),
-                title: opt(
-                    str({
-                        description: "A short title; without one, the first message names it",
-                    }),
-                ),
-                worktree: opt(
-                    bool({
-                        description:
-                            "Work in a git worktree of its own, on a new branch, apart from the folder",
-                    }),
-                ),
+                ...startFields,
                 model: opt(
                     str({
                         description:
@@ -318,47 +410,27 @@ export default function createPip(host: PocketHost) {
         ),
         // Safe to run again: the session it made is kept with the call, and its message and follow are the call's.
         replay: "safe",
-        execute: async (args, api, context) => {
-            // A server started before PiP could find checkouts would start in the default folder instead.
-            if (args.repo !== undefined && !github) {
-                throw new Error(
-                    "Starting a session from a repository needs a restart of the server (menu → Restart server); give a folder meanwhile.",
-                );
-            }
+        execute: (args, api, context) => startSession(args, api, context),
+    });
 
-            let id = await api.memo<number>("pip.session", context);
-
-            if (id === undefined) {
-                const made = await host.pip.start(api.conversationId, args);
-
-                id = await api.memo("pip.session", Number(made), context);
-            }
-
-            const link = `/s/${String(id)}`;
-
-            if (args.message === undefined || args.message.trim() === "") {
-                return reply(`Started session ${link}.`);
-            }
-
-            const sent = await host.pip.send(
-                api.conversationId,
-                id,
-                args.message,
-                false,
-                key(api),
-                { started: true },
-            );
-
-            if (args.report === false) {
-                return reply(`Started session ${link} and sent the message.`);
-            }
-
-            await host.pip.follow(api.conversationId, id, sent.requestId, key(api));
-
-            return reply(
-                `Started session ${link} and sent the message; a report comes back when Pi answers.`,
-            );
-        },
+    const botStart = defineTool({
+        name: "bot_start",
+        description:
+            "Start a session from a predefined bot in your person's bots folder, and send it a self-contained first message. Use it only when your person names a bot they set up, and for hands-on work: the bot supplies what Pi is told, the skills its folder gets, the model, and the thinking level, so never pick those yourself. Without a message, just creates the session. Where it works is as in session_start.",
+        parameters: obj(
+            {
+                bot: str({
+                    description:
+                        "The bot's name in your person's bots folder: bots/<name>.json in Pi Pocket's data folder",
+                }),
+                ...startFields,
+                report,
+            },
+            { open: true },
+        ),
+        // Safe to run again: as session_start, the session is kept with the call, and its message and follow are its.
+        replay: "safe",
+        execute: (args, api, context) => startSession(args, api, context),
     });
 
     const send = defineTool({
@@ -742,6 +814,7 @@ export default function createPip(host: PocketHost) {
             sessions,
             read,
             start,
+            botStart,
             send,
             follow,
             stop,

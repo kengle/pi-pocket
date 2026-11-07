@@ -549,6 +549,7 @@ export interface PocketHost {
         | "sessions"
         | "read"
         | "start"
+        | "startBot"
         | "send"
         | "stop"
         | "archive"
