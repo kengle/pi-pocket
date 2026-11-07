@@ -19,9 +19,9 @@ import {
     readdirSync,
     readFileSync,
     realpathSync,
-    rmSync,
     statSync,
     symlinkSync,
+    unlinkSync,
     watch,
     writeFileSync,
 } from "node:fs";
@@ -210,9 +210,9 @@ function moduleFiles(directory: string): string[] {
 /**
  * Make the drop-in folder, with a `node_modules` link to Pi Pocket's own packages. Drop-ins then import
  * `@earendil-works/pi-durable` and the rest as built-in modules do, and get the very modules the server runs. A
- * `node_modules` folder the owner made there stays as it is; a link to another place is replaced. Where npm split Pi
- * Pocket's packages between folders (a local install beside other versions of them), `packageModules` says where each
- * is, and the link leads to a hidden folder with a link to each one instead.
+ * `node_modules` folder that is not a link is an error, for the log; a link to another place is replaced. Where
+ * npm split Pi Pocket's packages between folders (a local install beside other versions of them),
+ * `packageModules` says where each is, and the link leads to a hidden folder with a link to each one instead.
  */
 export function prepareDropInFolder(
     directory: string,
@@ -249,9 +249,9 @@ const TYPES_COPY =
 /**
  * Link `_pocket.d.ts` in the drop-in folder to Pi Pocket's public types (`types/pocket.d.ts`), so a drop-in imports them
  * from beside it on any machine. Its leading `_` keeps it from loading as a module. A link that leads to a file that can
- * be read stays as it is, wherever it leads (the owner's own checkout, say); a link to nowhere is made again. A file the
- * owner made stays as it is. Where links cannot be made (Windows, or a file system that refuses them with `EPERM`), it
- * is a copy instead, refreshed when the types change.
+ * be read stays as it is, wherever it leads (the owner's own checkout, say); a link to nowhere is made again. A file
+ * the owner made stays as it is, and a folder there is an error. Where links cannot be made (Windows, or a file
+ * system that refuses them with `EPERM`), it is a copy instead, refreshed when the types change.
  */
 export function linkTypes(directory: string, types: string): void {
     const link = join(directory, "_pocket.d.ts");
@@ -274,8 +274,14 @@ export function linkTypes(directory: string, types: string): void {
             // A link to nowhere, or to something unreadable: made again below.
         }
 
-        rmSync(link, { force: true });
+        removeLink(link);
     } else if (found !== undefined) {
+        if (found.isDirectory()) {
+            throw new Error(
+                `Cannot link ${link}: a folder is there, not a link. Move it away, then start Pi Pocket again.`,
+            );
+        }
+
         if (found.isFile() && readFileSync(link, "utf8").startsWith(TYPES_COPY)) {
             copyTypes(link, types);
         }
@@ -313,25 +319,46 @@ function copyTypes(link: string, types: string): void {
     writeFileSync(link, content);
 }
 
-/** Make `link` lead to `target`, unless it does already, or is a file or folder of its own. */
+/** Remove the link at `path`. A path that is not a link is an error: Pi Pocket never deletes the owner's files. */
+function removeLink(path: string): void {
+    try {
+        unlinkSync(path);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            return;
+        }
+
+        throw new Error(
+            `Cannot remove ${path}: it is not a link. Move it away, then start Pi Pocket again.`,
+            { cause: error },
+        );
+    }
+}
+
+/** Make `link` lead to `target`, unless it does already. A file or folder that is not a link is an error. */
 function keepLink(link: string, target: string, type: "dir" | "file" | "junction"): void {
     let current: string | undefined;
 
     try {
         if (!lstatSync(link).isSymbolicLink()) {
-            return;
+            throw new Error(
+                `Cannot link ${link}: a file or folder is there, not a link. Move it away, then start Pi Pocket again.`,
+            );
         }
 
         current = realpathSync(link);
-    } catch {
+    } catch (error) {
         // Missing, or a link to nowhere: made below.
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw error;
+        }
     }
 
     if (current === realpathSync(target)) {
         return;
     }
 
-    rmSync(link, { force: true });
+    removeLink(link);
     symlinkSync(target, link, type);
 }
 
