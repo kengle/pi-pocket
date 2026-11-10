@@ -14,7 +14,7 @@ import {
 } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
@@ -75,6 +75,17 @@ let app: App;
 /** A bot file, as its person writes it in the data folder's `bots/`. */
 function bot(name: string, value: unknown): void {
     writeFileSync(join(dataDir, "bots", `${name}.json`), JSON.stringify(value));
+}
+
+/** A skill in the pool as a real one is: its own files, and the build caches no skill needs. */
+function poolSkillWithCaches(name: string): void {
+    const folder = join(pool, name);
+
+    mkdirSync(join(folder, "__pycache__"), { recursive: true });
+    writeFileSync(join(folder, "SKILL.md"), SKILL);
+    writeFileSync(join(folder, "helper.pyc"), "cache\n");
+    writeFileSync(join(folder, "__pycache__", "helper.cpython-313.pyc"), "cache\n");
+    writeFileSync(join(folder, ".DS_Store"), "cache\n");
 }
 
 /** The owner's PiP, on the scripted model. */
@@ -216,6 +227,36 @@ test("a worktree's skills are checked once its folder is made, and the error nam
         (await app.agentState(made!.id as unknown as ConversationId))?.instructions,
         undefined,
     );
+});
+
+test("a bot copies its skill without the pool's build caches", async () => {
+    const id = await pip();
+    const folder = join(root, "bots-cache");
+
+    poolSkillWithCaches("cached");
+    mkdirSync(folder, { recursive: true });
+    bot("cached", { skills: ["cached"], model: "faux/faux-1" });
+
+    const made = await app.pip.startBot(id, { bot: "cached", folder });
+
+    assert.deepEqual(made.installed, ["cached"]);
+    assert.deepEqual(readdirSync(join(folder, ".pi", "skills", "cached")), ["SKILL.md"]);
+});
+
+test("a folder holding only caches takes the skill, with no conflict", async () => {
+    const id = await pip();
+    const folder = join(root, "bots-cache-only");
+    const target = join(folder, ".pi", "skills", "cached");
+
+    poolSkillWithCaches("cached");
+    mkdirSync(join(target, "__pycache__"), { recursive: true });
+    writeFileSync(join(target, "__pycache__", "helper.cpython-313.pyc"), "cache\n");
+    bot("cached-only", { skills: ["cached"], model: "faux/faux-1" });
+
+    const made = await app.pip.startBot(id, { bot: "cached-only", folder });
+
+    assert.deepEqual(made.installed, ["cached"]);
+    assert.equal(readFileSync(join(target, "SKILL.md"), "utf8"), SKILL);
 });
 
 test("a bot without a model makes no session", async () => {

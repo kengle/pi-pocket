@@ -8,7 +8,7 @@
  * caller to check: it knows the models signed in.
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { MAX_INSTRUCTIONS } from "./commands.ts";
 import { describe, HttpError } from "./errors.ts";
@@ -161,15 +161,34 @@ export function readBot(dataDir: string, bot: string): Bot {
     };
 }
 
-/** Whether two folders hold the same files, at the same places, with the same contents. */
-function sameFolder(left: string, right: string): boolean {
-    const listed = (folder: string) =>
-        readdirSync(folder, { withFileTypes: true })
-            .map((entry) => `${entry.isDirectory() ? "folder" : "file"}:${entry.name}`)
-            .sort();
-    const names = listed(left);
+/**
+ * Whether a name is not part of a skill: compiled caches (`__pycache__`, `.pyc`, `.pyo`), and what a file system or a
+ * clone left behind (`.DS_Store`, `.git`). A copy leaves them out, and a comparison does not read them, so a pool with
+ * caches and a folder without them are the same skill.
+ */
+function ignored(name: string): boolean {
+    return (
+        name === "__pycache__" ||
+        name === ".git" ||
+        name === ".DS_Store" ||
+        name.endsWith(".pyc") ||
+        name.endsWith(".pyo")
+    );
+}
 
-    if (names.join("\n") !== listed(right).join("\n")) {
+/** A folder's entries that a skill has, sorted: what a copy writes, and what a comparison reads. */
+function entriesOf(folder: string): string[] {
+    return readdirSync(folder, { withFileTypes: true })
+        .filter((entry) => !ignored(entry.name))
+        .map((entry) => `${entry.isDirectory() ? "folder" : "file"}:${entry.name}`)
+        .sort();
+}
+
+/** Whether two folders hold the same files, at the same places, with the same contents: caches left out of both. */
+function sameFolder(left: string, right: string): boolean {
+    const names = entriesOf(left);
+
+    if (names.join("\n") !== entriesOf(right).join("\n")) {
         return false;
     }
 
@@ -196,22 +215,28 @@ function conflict(name: string, target: string, cwd: string): HttpError {
 
 /**
  * Whether a bot's skills can go into `cwd`: each one either not there yet, or there as the bot has it. One whose folder
- * holds other files is an error that names it. This reads only, so a caller can ask before it makes a session.
+ * holds other files is an error that names it; one that holds only caches has nothing of its own yet, and can take the
+ * skill. This reads only, so a caller can ask before it makes a session.
  */
 export function checkSkills(dataDir: string, cwd: string, skills: readonly string[]): void {
     for (const name of skills) {
         const target = join(cwd, ".pi", "skills", name);
 
-        if (existsSync(target) && !sameFolder(join(dataDir, "bots", "skills", name), target)) {
+        if (
+            existsSync(target) &&
+            entriesOf(target).length > 0 &&
+            !sameFolder(join(dataDir, "bots", "skills", name), target)
+        ) {
             throw conflict(name, target, cwd);
         }
     }
 }
 
 /**
- * A bot's skills, in a session's folder: each one copied from the pool to `<cwd>/.pi/skills/<name>/`. A folder already
- * there as the bot has it is skipped, since the session has that skill already; one with files of its own stops the
- * call, naming it, because a folder in someone's project is theirs to keep.
+ * A bot's skills, in a session's folder: each one copied from the pool to `<cwd>/.pi/skills/<name>/`, without the caches
+ * no skill needs. A folder already there as the bot has it is skipped, since the session has that skill already; one
+ * holding only caches gets the skill; one with files of its own stops the call, naming it, because a folder in someone's
+ * project is theirs to keep.
  */
 export function installSkills(dataDir: string, cwd: string, skills: readonly string[]): BotInstall {
     const pool = join(dataDir, "bots", "skills");
@@ -221,16 +246,23 @@ export function installSkills(dataDir: string, cwd: string, skills: readonly str
     for (const name of skills) {
         const source = join(pool, name);
         const target = join(cwd, ".pi", "skills", name);
+        const there = existsSync(target);
 
-        if (!existsSync(target)) {
-            mkdirSync(dirname(target), { recursive: true });
-            cpSync(source, target, { recursive: true });
-            installed.push(name);
-        } else if (sameFolder(source, target)) {
+        if (there && sameFolder(source, target)) {
             skipped.push(name);
-        } else {
+            continue;
+        }
+
+        if (there && entriesOf(target).length > 0) {
             throw conflict(name, target, cwd);
         }
+
+        mkdirSync(dirname(target), { recursive: true });
+        cpSync(source, target, {
+            recursive: true,
+            filter: (from: string) => !ignored(basename(from)),
+        });
+        installed.push(name);
     }
 
     return { installed, skipped };
