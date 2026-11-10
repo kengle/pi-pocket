@@ -81,6 +81,7 @@ const OWN_TOOLS = new Set([
     "session_follow",
     "session_stop",
     "session_archive",
+    "session_rename",
     "session_schedule",
     "session_watch_pr",
     "approvals",

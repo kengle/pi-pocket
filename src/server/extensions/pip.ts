@@ -538,6 +538,26 @@ export default function createPip(host: PocketHost) {
         },
     });
 
+    const rename = defineTool({
+        name: "session_rename",
+        description:
+            "Rename a session: its title in the list and in links. It changes no message, and nothing Pi knows. Use it only when your person asks for a rename, or when a title is plainly a placeholder.",
+        parameters: obj(
+            {
+                session,
+                title: str({ description: "The new title, on one line" }),
+            },
+            { open: true },
+        ),
+        // Safe to run again: the same title twice leaves the session as the first did.
+        replay: "safe",
+        execute: async (args, api) => {
+            const renamed = await host.pip.rename(api.conversationId, args.session, args.title);
+
+            return reply(`Renamed /s/${String(renamed.id)} to ${quoted(renamed.title)}.`);
+        },
+    });
+
     const schedule = defineTool({
         name: "session_schedule",
         description:
@@ -819,6 +839,7 @@ export default function createPip(host: PocketHost) {
             follow,
             stop,
             archive,
+            rename,
             schedule,
             approvals,
             ...(github ? [repoWatch, watchPr] : []),

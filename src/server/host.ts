@@ -553,6 +553,7 @@ export interface PocketHost {
         | "send"
         | "stop"
         | "archive"
+        | "rename"
         | "approvals"
         | "deny"
         | "status"

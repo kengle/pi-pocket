@@ -1493,6 +1493,28 @@ export class Pip {
         return this.#app.commands.updateSession(id, this.#through(user), { archived });
     }
 
+    /**
+     * Rename a session: its title in the list and in links, and nothing Pi knows. The title is one line, cut to the
+     * length a name may have (`updateSession`), and the session's chat says who renamed it.
+     */
+    async rename(
+        pipId: ConversationId,
+        sessionId: number,
+        title: string,
+    ): Promise<{ id: number; title: string }> {
+        const app = this.#app;
+        const user = this.#person(pipId);
+        const id = this.#session(pipId, user, sessionId);
+
+        if (title.trim() === "") {
+            throw new Error("A title needs some text: give the name the session should show.");
+        }
+
+        await app.commands.updateSession(id, this.#through(user), { title });
+
+        return { id: sessionId, title: app.sessionMeta(id)?.title ?? "" };
+    }
+
     /** The calls waiting for approval in the sessions PiP's person can see. */
     approvals(pipId: ConversationId) {
         const app = this.#app;
