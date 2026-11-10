@@ -558,6 +558,31 @@ export default function createPip(host: PocketHost) {
         },
     });
 
+    const compact = defineTool({
+        name: "session_compact",
+        description:
+            "Compact a session's context: its history becomes a summary, so details of it are lost, and only what keep says and the summary's own choices stay. What Pi is told in every request, its skills, and its model stay as they are. Do not compact a session that is working: wait until it is idle.",
+        parameters: obj(
+            {
+                session,
+                keep: opt(
+                    str({
+                        description:
+                            "One line on what the summary must keep, such as decisions or a format",
+                    }),
+                ),
+            },
+            { open: true },
+        ),
+        // Safe to run again: compacting a context that already fits the recent window does nothing.
+        replay: "safe",
+        execute: async (args, api) => {
+            const { id } = await host.pip.compact(api.conversationId, args.session, args.keep);
+
+            return reply(`Compacting /s/${String(id)}.`);
+        },
+    });
+
     const schedule = defineTool({
         name: "session_schedule",
         description:
@@ -840,6 +865,7 @@ export default function createPip(host: PocketHost) {
             stop,
             archive,
             rename,
+            compact,
             schedule,
             approvals,
             ...(github ? [repoWatch, watchPr] : []),

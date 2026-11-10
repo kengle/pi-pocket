@@ -156,6 +156,7 @@ const DID = {
     session_stop: { verb: "stopped", noun: "session", by: "session" },
     session_archive: { verb: "archived", noun: "session", by: "session" },
     session_rename: { verb: "renamed", noun: "session", by: "session" },
+    session_compact: { verb: "compacted", noun: "session", by: "session" },
     session_schedule: { verb: "scheduled", noun: "message" },
     schedule: { verb: "scheduled", noun: "reminder" },
     approvals: { verb: "checked approvals" },

@@ -213,8 +213,9 @@ type Dismissal = { dismissed: boolean; newer?: true };
 const PLAN_EXTENSION = "pocket-plan";
 /** What Pi is told when someone approves its plan. */
 const PLAN_APPROVED = "The plan is approved. Go ahead and carry it out.";
-/** Longest handoff note for a new context. */
-const MAX_HANDOFF = 20_000;
+
+/** Longest handoff note for a new context, and longest note of what a compaction must keep. */
+export const MAX_HANDOFF = 20_000;
 
 /** Longest instructions for Pi: what a person sets, and what a bot gives its session (`bots.ts`). */
 export const MAX_INSTRUCTIONS = 8000;

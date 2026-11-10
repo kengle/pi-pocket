@@ -40,7 +40,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { PocketApp } from "./app.ts";
 import { type BotInstall, checkSkills, installSkills, readBot } from "./bots.ts";
-import { writeInstructions } from "./commands.ts";
+import { MAX_HANDOFF, writeInstructions } from "./commands.ts";
 import type { User } from "./config.ts";
 import { AuthorsDoc, FollowsDoc, PipAskedDoc, SessionsDoc } from "./docs.ts";
 import { presentationOptions, presentationPip } from "./entry-presentation.ts";
@@ -1513,6 +1513,36 @@ export class Pip {
         await app.commands.updateSession(id, this.#through(user), { title });
 
         return { id: sessionId, title: app.sessionMeta(id)?.title ?? "" };
+    }
+
+    /**
+     * Compact a session's context: its history becomes a summary, and `keep` says what that summary must hold. What Pi is
+     * told in every request, its skills, and its model stay as they are. A session at work is not compacted: its next
+     * request would carry the history the summary was made from.
+     */
+    async compact(
+        pipId: ConversationId,
+        sessionId: number,
+        keep: string | undefined,
+    ): Promise<{ id: number }> {
+        const app = this.#app;
+        const user = this.#person(pipId);
+        const id = this.#session(pipId, user, sessionId);
+        const wanted = keep?.trim() || undefined;
+
+        if (wanted !== undefined && wanted.length > MAX_HANDOFF) {
+            throw new Error(`What to keep is limited to ${MAX_HANDOFF} characters.`);
+        }
+
+        if (app.isBusy(id)) {
+            throw new Error(
+                `/s/${String(sessionId)} is working: wait until it is idle, then compact it.`,
+            );
+        }
+
+        await app.commands.compact(id, this.#through(user), wanted);
+
+        return { id: sessionId };
     }
 
     /** The calls waiting for approval in the sessions PiP's person can see. */

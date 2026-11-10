@@ -554,6 +554,7 @@ export interface PocketHost {
         | "stop"
         | "archive"
         | "rename"
+        | "compact"
         | "approvals"
         | "deny"
         | "status"

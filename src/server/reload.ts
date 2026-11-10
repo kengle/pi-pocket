@@ -141,6 +141,7 @@ export const BUILT_IN_TOOLS: ReadonlySet<string> = new Set([
     "session_stop",
     "session_archive",
     "session_rename",
+    "session_compact",
     "session_schedule",
     "approvals",
     "watch_pr",
