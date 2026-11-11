@@ -107,6 +107,7 @@ import { expandHome, workspaceScheme } from "./paths.ts";
 import { createPublicFetch } from "./public-fetch.ts";
 import { PiSessions } from "./pi-sessions.ts";
 import { Hooks } from "./hooks.ts";
+import { HC_EXTENSION } from "./extensions/hc.ts";
 import { Pip, PIP_EXTENSION } from "./pip.ts";
 import { PIP_COMPACT_CHOICES, PipCompaction } from "./pip-compact.ts";
 import { RepoWatches } from "./repo-watches.ts";
@@ -1459,13 +1460,16 @@ export class PocketApp {
         return {
             // A phase can wait for hours without changing state; repeated process kills must not park it.
             restartLimit: Infinity,
-            // Every installed extension, in install order, but PiP's: its tools and prompt are for its conversation only,
-            // which selects it by name (`pip.ts`).
+            // Every installed extension, in install order, but the ones PiP alone runs: their tools and prompt are for
+            // its conversation only, which selects them by name (`pip.ts`).
             get extensions() {
                 return registry()
                     ?.snapshot()
                     .installed()
-                    .filter((extension) => extension.name !== PIP_EXTENSION);
+                    .filter(
+                        (extension) =>
+                            extension.name !== PIP_EXTENSION && extension.name !== HC_EXTENSION,
+                    );
             },
             get stream() {
                 return stream();

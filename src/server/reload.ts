@@ -136,6 +136,7 @@ export const BUILT_IN_TOOLS: ReadonlySet<string> = new Set([
     "session_read",
     "session_start",
     "bot_start",
+    "hc_tools",
     "session_send",
     "session_follow",
     "session_stop",

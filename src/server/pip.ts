@@ -72,6 +72,7 @@ export const PIP_EXTENSIONS = [
     // Core's own: its hook takes the values extensions hide (`host.hide`) out of PiP's tool results too.
     "pocket-core",
     PIP_EXTENSION,
+    "pocket-hc",
     "pocket-artifacts",
     "pocket-schedules",
     "pocket-guard",
