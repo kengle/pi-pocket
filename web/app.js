@@ -33,6 +33,7 @@ import {
 } from "./peeks.js";
 import {
     closePip,
+    collapsePip,
     openPip,
     PipBoardBox,
     PipHost,
@@ -828,7 +829,7 @@ addEventListener("keydown", (event) => {
         }
     }
 
-    // Esc closes PiP first, unless a sheet or the launcher is over it: those close first.
+    // Esc folds PiP first, unless a sheet or the launcher is over it: those close first. Folded already, it closes.
     if (
         event.key === "Escape" &&
         !event.defaultPrevented &&
@@ -837,7 +838,7 @@ addEventListener("keydown", (event) => {
         !store.state.launcher
     ) {
         event.preventDefault();
-        closePip();
+        (store.state.pipCollapsed ? closePip : collapsePip)();
 
         return;
     }

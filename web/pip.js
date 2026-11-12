@@ -51,6 +51,7 @@ import {
 import { MicButton, useDictation } from "./voice.js";
 
 const OPEN_KEY = "pocket.pip";
+const COLLAPSED_KEY = "pocket.pip.collapsed";
 const SEEN_KEY = "pocket.pip.seen";
 const DRAFT_KEY = "pip.draft";
 // Image previews and in-flight work outlive the panel, but never their PiP/account scope.
@@ -388,14 +389,16 @@ export function openPip(text) {
     }
 
     if (store.state.pipOpen) {
+        expandPip();
         focusComposer();
 
         return Promise.resolve();
     }
 
     sessionStorage.setItem(OPEN_KEY, "1");
+    sessionStorage.removeItem(COLLAPSED_KEY);
     // The subscriber above tells the server, from inside this `set`: once, not twice.
-    store.set({ pipOpen: true, launcher: false, drawer: false });
+    store.set({ pipOpen: true, pipCollapsed: false, launcher: false, drawer: false });
 
     return Promise.resolve();
 }
@@ -430,12 +433,37 @@ export function closePip() {
     }
 
     sessionStorage.removeItem(OPEN_KEY);
+    sessionStorage.removeItem(COLLAPSED_KEY);
     markSeen();
-    store.set({ pipOpen: false });
+    store.set({ pipOpen: false, pipCollapsed: false });
     tellServer(false);
 }
 
 export const togglePip = () => (pipShown() ? closePip() : openPip());
+
+/**
+ * Fold PiP to its mark in the corner: the panel keeps its place, its draft, and its scroll (a class hides it), and the
+ * mark brings it back. Kept per tab, as `pipOpen` is, so a reload keeps it folded.
+ */
+export function collapsePip() {
+    if (!store.state.pipOpen || store.state.pipCollapsed) {
+        return;
+    }
+
+    sessionStorage.setItem(COLLAPSED_KEY, "1");
+    store.set({ pipCollapsed: true });
+}
+
+/** Unfold PiP: the panel is where it was, and its box takes the words. */
+export function expandPip() {
+    if (!store.state.pipCollapsed) {
+        return;
+    }
+
+    sessionStorage.removeItem(COLLAPSED_KEY);
+    store.set({ pipCollapsed: false });
+    focusComposer();
+}
 
 /** Put `text` in PiP's box, after what is there, and open PiP. */
 function draftPip(text) {
@@ -1221,7 +1249,7 @@ export function PipBoardBox({ children }) {
     </footer>`;
 }
 
-function PipPanel({ leaving, scrim }) {
+function PipPanel({ leaving, scrim, collapsed }) {
     const { pip, pipView: view, me } = store.state;
     const ref = useRef(null);
     const body = useRef(null);
@@ -1296,12 +1324,12 @@ function PipPanel({ leaving, scrim }) {
     };
 
     return html`<section
-        class=${`pip-panel ${leaving ? "leaving" : ""}`}
+        class=${`pip-panel ${leaving ? "leaving" : ""} ${collapsed ? "collapsed" : ""}`}
         data-part="pip"
         data-state=${leaving ? "closing" : undefined}
         ref=${ref}
         role="dialog"
-        aria-modal=${NARROW.matches ? "true" : undefined}
+        aria-modal=${NARROW.matches && !collapsed ? "true" : undefined}
         aria-label="PiP, your assistant"
     >
         <div class="pip-resize pip-resize-left" data-pip-resize="left" aria-hidden="true"></div>
@@ -1451,12 +1479,35 @@ export function PipHost() {
     // Never in both places: while PiP's conversation is in the session's place (moving from there to the corner, say),
     // the panel waits.
     const open = store.state.pipOpen && pipAvailable() && !pipBoard();
+    const collapsed = Boolean(open && store.state.pipCollapsed);
     const [kept, leaving] = usePresence(open || null, 180);
     // What a drag on the sheet dims as it goes: the scrim, not the app behind it.
     const scrim = useRef(null);
 
     // Back closes it, as it closes a sheet.
     useBack(Boolean(open), closePip);
+
+    // A tap on the conversation under the panel folds PiP away: the person went for what is behind it. The panel is only
+    // hidden, so its draft, its place, and its scroll stay, and its mark brings it back.
+    useEffect(() => {
+        if (!open || collapsed) {
+            return;
+        }
+
+        const onDown = (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+
+            if (target === null || target.closest('[data-part="pane"]') === null) {
+                return;
+            }
+
+            collapsePip();
+        };
+
+        document.addEventListener("pointerdown", onDown, true);
+
+        return () => document.removeEventListener("pointerdown", onDown, true);
+    }, [open, collapsed]);
 
     // As a board, not even the floating panel on its way out.
     if (!pipAvailable() || pipBoard()) {
@@ -1467,14 +1518,25 @@ export function PipHost() {
         return html`<${PipBubble} />`;
     }
 
-    // On phones a scrim dims what is behind the sheet, and a tap on it closes it; wide screens have none.
+    // On phones a scrim dims what is behind the sheet, and a tap on it folds it away; wide screens have none.
     return html`<div
-            class=${`pip-scrim ${leaving ? "leaving" : ""}`}
+            class=${`pip-scrim ${leaving ? "leaving" : ""} ${collapsed ? "collapsed" : ""}`}
             ref=${scrim}
             aria-hidden="true"
-            onClick=${closePip}
+            onClick=${collapsePip}
         ></div>
-        <${PipPanel} leaving=${leaving} scrim=${scrim} />`;
+        <${PipPanel} leaving=${leaving} scrim=${scrim} collapsed=${collapsed} />
+        ${
+            collapsed &&
+            html`<button
+                class="pip-handle"
+                aria-label="Open PiP"
+                title="PiP (Alt+A)"
+                onClick=${expandPip}
+            >
+                <${Icon} name="pip" size=${22} />
+            </button>`
+        }`;
 }
 
 /** PiP in the rail: the way to it that is always there, marked while it works or has something new. */

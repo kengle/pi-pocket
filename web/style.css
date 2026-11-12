@@ -18074,6 +18074,14 @@ textarea.notes {
     animation: pop-out var(--t-out) linear forwards;
 }
 
+/* Folded to its mark: out of sight, never out of the page, so the box, its draft, and where it was read stay as they are. */
+.pip-panel.collapsed {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    animation: none;
+}
+
 .pip-resize {
     display: none;
 }
@@ -18720,6 +18728,11 @@ textarea.notes {
     display: none;
 }
 
+/* On a phone the scrim folds PiP too; folded, it must not dim or take taps over what the person went to. */
+.pip-scrim.collapsed {
+    display: none;
+}
+
 /* The mark in the corner, while PiP works or has something new: above the message box, out of its way. */
 .pip-bubble {
     position: fixed;
@@ -18740,6 +18753,24 @@ textarea.notes {
 
 .pip-bubble.leaving {
     animation: popout var(--t-out) linear forwards;
+}
+
+/* Folded PiP's mark: where the bubble stands, above the message box and its send button, out of their way. */
+.pip-handle {
+    position: fixed;
+    right: calc(var(--gap-out) + 6px + env(safe-area-inset-right));
+    bottom: calc(104px + env(safe-area-inset-bottom));
+    z-index: 16;
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    background: var(--o-bg-dark);
+    color: var(--accent);
+    border: 1px solid var(--hair-2);
+    border-radius: 50%;
+    box-shadow: var(--shadow);
+    animation: pip-in 0.32s var(--ease-out);
 }
 
 .pip-dot {
@@ -18815,7 +18846,8 @@ textarea.notes {
     }
 
     /* Above the message box and the jump to the newest message, both at the bottom right. */
-    .pip-bubble {
+    .pip-bubble,
+    .pip-handle {
         bottom: calc(176px + env(safe-area-inset-bottom));
     }
 

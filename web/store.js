@@ -368,6 +368,8 @@ export const store = {
         pip: null,
         /** The PiP panel shows; kept per tab, like the browser's, so the reload after a live edit keeps it. */
         pipOpen: sessionStorage.getItem("pocket.pip") === "1",
+        /** PiP is folded to its mark in the corner: only the panel is out of sight, so its draft and place stay. */
+        pipCollapsed: sessionStorage.getItem("pocket.pip.collapsed") === "1",
         /** PiP's conversation, while the panel shows. */
         pipView: emptyView(),
     },
