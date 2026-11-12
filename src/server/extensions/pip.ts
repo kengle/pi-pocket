@@ -6,7 +6,7 @@
  */
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import { arr, bool, num, obj, opt, str, union } from "@earendil-works/pi-schema";
 import {
     CompactionTask,

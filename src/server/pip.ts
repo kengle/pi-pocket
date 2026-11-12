@@ -21,8 +21,7 @@ import {
     clampThinkingLevel,
     type ModelThinkingLevel,
 } from "@earendil-works/pi-ai";
-import type { Context } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import {
     AgentDoc,
     AssistantEntry,
