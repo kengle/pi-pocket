@@ -67,7 +67,6 @@ import { homePath } from "./paths.ts";
 import { forModel, MAX_INLINE_IMAGE, modelImage } from "./model-images.ts";
 import { mentionedPaths, viewFile } from "./files.ts";
 import { isThinkingLevel, THINKING_LEVELS } from "./models.ts";
-import { writePiSession } from "./pi-sessions.ts";
 import { snippet } from "./projection.ts";
 import { globalModelSettings, projectModelDefault } from "./project-model.ts";
 import { expandPromptTemplate, expandSkillCommand, unwrapSkill } from "./prompts.ts";
@@ -518,63 +517,6 @@ export class Commands {
         );
     }
 
-    /**
-     * Continue one of Pi's sessions from the terminal here: a new session with its history, in its folder, with its model
-     * when that one is signed in here (`pi-sessions.ts`). The owner's, as Pi's own files are.
-     */
-    async continuePiSession(user: User, path: string): Promise<{ id: ConversationId }> {
-        const app = this.#app;
-        const session = await app.piSessions.read(user, path);
-        let cwd: string;
-
-        try {
-            cwd = app.workspace.checkDirectory(session.cwd);
-        } catch {
-            throw new HttpError(
-                400,
-                `The folder this Pi session worked in is not there anymore: ${session.cwd}`,
-            );
-        }
-
-        const start = this.#defaultModel(session);
-        const title = session.title.slice(0, MAX_TITLE);
-        const now = Date.now();
-        const conversation = await app.harness.createConversation(
-            {
-                ownership: { kind: "ownerless" },
-                agent: {
-                    cwd,
-                    ...(start.model === undefined ? {} : { model: start.model }),
-                    ...(start.thinkingLevel === undefined
-                        ? {}
-                        : { thinkingLevel: start.thinkingLevel }),
-                },
-                init: async (tx, id) => {
-                    (await tx.doc(SessionsDoc)).items[String(id)] = {
-                        cwd,
-                        title,
-                        createdAt: now,
-                        updatedAt: now,
-                        createdBy: user.id,
-                        fromPi: { session: session.id, count: session.count },
-                    };
-                    await writePiSession(tx, id, session, {
-                        session: session.id,
-                        title: session.title,
-                        file: path,
-                    });
-                },
-            },
-            context,
-        );
-
-        return { id: conversation.id };
-    }
-
-    /**
-     * Run `create` with the folder a new session works in: `cwd` itself, or, when `isolated`, the matching folder in a
-     * new git worktree made from it, named after `label`. A worktree whose session `create` did not make is discarded.
-     */
     async #inPlace<T>(
         cwd: string,
         isolated: boolean,

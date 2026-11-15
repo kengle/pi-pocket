@@ -2734,11 +2734,6 @@ export const actions = {
     trust: () => api(`c/${current()}/trust`),
     /** `trust`, `trust-parent`, or `distrust`, as Pi's `/trust` offers them. */
     setTrust: (choice) => api(`c/${current()}/trust`, { choice }),
-    /** Pi's sessions from the terminal on this machine; one of them to look at; and one continued as a new session. */
-    piSessions: (query = "") =>
-        api(query === "" ? "pi-sessions" : `pi-sessions?q=${encodeURIComponent(query)}`),
-    piSession: (path) => api(`pi-sessions/preview?path=${encodeURIComponent(path)}`),
-    continuePiSession: (path) => api("pi-sessions/continue", { path }),
     /** `when` says when, then what Pi gets: `in 2h check the deploy`. Clock times are this device's. */
     schedule: (when) =>
         api(`c/${current()}/schedules`, {

@@ -557,33 +557,6 @@ export function createApi(options: HttpOptions, auth: Auth) {
             return json(response, 200, await app.artifactOverview(user));
         }
 
-        // Pi's sessions from the terminal, which the owner can continue here.
-        if (first === "pi-sessions" && second === undefined && method === "GET") {
-            return json(
-                response,
-                200,
-                await app.piSessions.list(user, url.searchParams.get("q") ?? ""),
-            );
-        }
-
-        if (first === "pi-sessions" && second === "preview" && method === "GET") {
-            return json(
-                response,
-                200,
-                await app.piSessions.preview(user, url.searchParams.get("path") ?? ""),
-            );
-        }
-
-        if (first === "pi-sessions" && second === "continue" && method === "POST") {
-            const body = await readJson<{ path?: unknown }>(request);
-
-            if (typeof body.path !== "string") {
-                throw new HttpError(400, "path is required");
-            }
-
-            return json(response, 200, await app.commands.continuePiSession(user, body.path));
-        }
-
         if (first === "sessions" && second === undefined && method === "POST") {
             const body = await readJson<{ cwd?: string; title?: string; worktree?: unknown }>(
                 request,

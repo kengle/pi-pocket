@@ -104,7 +104,6 @@ import { compactionReader } from "./compaction.ts";
 import { configureHttp } from "./net.ts";
 import { agentDir, expandHome, workspaceScheme } from "./paths.ts";
 import { createPublicFetch } from "./public-fetch.ts";
-import { PiSessions } from "./pi-sessions.ts";
 import { Hooks } from "./hooks.ts";
 import { HC_EXTENSION } from "./extensions/hc.ts";
 import { Pip, PIP_EXTENSION } from "./pip.ts";
@@ -414,8 +413,6 @@ export class PocketApp {
     readonly workspace = new Workspace(this);
     /** The conversation's stored history, as people read it. */
     readonly transcripts = new Transcripts(this);
-    /** Pi's sessions from the terminal, which the owner can continue here. */
-    readonly piSessions = new PiSessions(this);
     /** PiP, the owner's assistant: its conversation, what its tools do, and the follows that report to it. */
     readonly pip = new Pip(this);
     /** PiP's context kept small: compacted sooner than a session's, with summaries of its own (`pip-compact.ts`). */
