@@ -5,12 +5,13 @@
  * Pi's own folder and the home folder keep no skills that a session loads: a project's skills are the project's, and a
  * skill for every project lives in the home folder's project, if its person put one there.
  *
- * Pi trusts a project when its trust store (`trust.json` in Pi's folder) says so for the folder or one above it, or
- * says nothing and Pi's `defaultProjectTrust` setting is "always". Pi Pocket asks its owner (`readProjectTrust` says
- * when) and saves the answer in the same store, with the three answers Pi's `/trust` saves (`saveProjectTrust`). A
- * project Pi was told not to trust offers none of its skills, and its `.pi-pocket/prompts` stay out too.
+ * A project offers its skills only when Pi was told to trust it: its trust store (`trust.json` in Pi's folder) says
+ * so for the folder or one above it, or says nothing and Pi's `defaultProjectTrust` setting is "always". No decision,
+ * or a "no", keeps them out. Pi Pocket asks its owner (`readProjectTrust` says when) and saves the answer in the same
+ * store, with the three answers Pi's `/trust` saves (`saveProjectTrust`).
  */
 import { existsSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { loadSkills, ProjectTrustStore, type Skill } from "@earendil-works/pi-coding-agent";
 import { projectSettingsFile, promptsSubdir, skillsSubdir } from "./paths.ts";
@@ -36,19 +37,26 @@ function gitRoot(folder: string): string | undefined {
     }
 }
 
-/** The project's skill folders: `<dir>/.pi-pocket/skills` in `cwd` and above it, nearest first, to the repo's root. */
+/**
+ * The project's skill folders: `<dir>/.pi-pocket/skills` in `cwd` and above it, nearest first, up to the root of its git
+ * repository; outside one, only `cwd`'s. The home folder and `/tmp` are never one of them, whatever holds them, and the
+ * walk stops there: a project's skills come from the project.
+ */
 function projectSkillFolders(cwd: string): string[] {
     const top = gitRoot(cwd);
+    const stop = top ?? cwd;
+    const home = homedir();
     const folders: string[] = [];
 
     for (let current = cwd; ; current = dirname(current)) {
+        const outer = current === home || current === "/tmp";
         const folder = skillsSubdir(current);
 
-        if (existsSync(folder)) {
+        if (!outer && existsSync(folder)) {
             folders.push(folder);
         }
 
-        if (current === top || dirname(current) === current) {
+        if (outer || current === stop || dirname(current) === current) {
             return folders;
         }
     }
@@ -142,17 +150,16 @@ export function projectDistrusted(cwd: string, sources: SkillSources): boolean {
     );
 }
 
-/** Where a session in `cwd` loads skills from: its project's folders, nearest first, unless it is not trusted. */
+/**
+ * Where a session in `cwd` loads skills from: its project's folders, nearest first, and only when Pi was told to trust
+ * that project. A project with no decision, or a "no", offers none of its skills.
+ */
 export function skillPlaces(cwd: string, sources: SkillSources): string[] {
     const folder = resolve(cwd);
-    const places = projectSkillFolders(folder);
 
-    if (places.length === 0) {
-        return [];
-    }
-
-    // Not trusted: the project offers nothing, as its `.pi-pocket/prompts` stay out too (`projectDistrusted`).
-    return decides(savedDecision(folder, sources.agentDir), sources) === "distrusted" ? [] : places;
+    return decides(savedDecision(folder, sources.agentDir), sources) === "trusted"
+        ? projectSkillFolders(folder)
+        : [];
 }
 
 /** Pi's skills for a session in `cwd`: the first of each name, from `skillPlaces`. */

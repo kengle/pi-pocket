@@ -11,6 +11,7 @@ import { getDocsPath, loadProjectContextFiles, type Skill } from "@earendil-work
 import { defineExtension, type PromptInput, section } from "@earendil-works/pi-durable";
 import { APP_ROOT } from "../config.ts";
 import type { PocketHost } from "../host.ts";
+import { readProjectTrust } from "../skills.ts";
 import { workspaceScheme } from "../paths.ts";
 
 const PREAMBLE = `You are Pi, a coding agent in Pi Pocket, a durable, multiplayer web app. People talk to you from a browser, often a phone, and several can share one conversation. When more than one person uses this server, each message starts with [from: Name].
@@ -103,6 +104,20 @@ export default function createPrompt(host: PocketHost) {
         }
     };
 
+    /** How many skills the project's folders hold and Pi did not load: the prompt says how many stay off. */
+    const untrusted = (cwd: string): number => {
+        if (host.skills(cwd).length > 0) {
+            return 0;
+        }
+
+        const trust = readProjectTrust(cwd, {
+            agentDir: host.agentDir,
+            defaultProjectTrust: "ask",
+        });
+
+        return new Set([...trust.ownSkills, ...trust.skills].map((each) => each.name)).size;
+    };
+
     const load = (cwd: string): Resources => {
         const cached = resources.get(cwd);
         const trust = trustChanged();
@@ -128,8 +143,15 @@ export default function createPrompt(host: PocketHost) {
 
         try {
             const text = formatSkills(host.skills(cwd));
+            // Skills the project holds but Pi was not told to trust: Pi must not think they are there.
+            const kept = untrusted(cwd);
 
-            skills = text === "" ? undefined : text;
+            skills =
+                text === ""
+                    ? kept === 0
+                        ? undefined
+                        : `Not trusted: this project's skills stay off (${String(kept)} found). The owner can answer with /trust; treat them as absent.`
+                    : text;
         } catch (error) {
             host.notice("warning", `Could not load skills for ${cwd}: ${String(error)}`);
         }

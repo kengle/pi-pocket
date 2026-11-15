@@ -62,13 +62,18 @@ const names = (cwd: string, sources: SkillSources) =>
         .map((each) => each.name)
         .sort();
 
+/** Pi's answer for the fixture's repository: trusted, so its skills load. */
+const trusting = (agentDir: string, repo: string) =>
+    new ProjectTrustStore(agentDir).set(repo, true);
+
 after(() => {
     cleanUp();
 });
 
 test("a project's skills come from its own folder and the folders above it, up to the repository's root", () => {
-    const { repo, cwd, sources } = fixture();
+    const { agentDir, repo, cwd, sources } = fixture();
 
+    trusting(agentDir, repo);
     assert.deepEqual(skillPlaces(cwd, sources), [
         join(cwd, ".pi-pocket", "skills"),
         join(repo, ".pi-pocket", "skills"),
@@ -79,7 +84,9 @@ test("a project's skills come from its own folder and the folders above it, up t
 });
 
 test("no skills come from .agents, Pi's folder, or Pi's settings", () => {
-    const { cwd, sources } = fixture();
+    const { agentDir, repo, cwd, sources } = fixture();
+
+    trusting(agentDir, repo);
 
     assert.deepEqual(
         names(cwd, sources).filter((name) =>
@@ -90,8 +97,9 @@ test("no skills come from .agents, Pi's folder, or Pi's settings", () => {
 });
 
 test("the nearest folder of a name wins", () => {
-    const { repo, cwd, sources } = fixture();
+    const { agentDir, repo, cwd, sources } = fixture();
 
+    trusting(agentDir, repo);
     skill(join(repo, ".pi-pocket", "skills"), "here", "The repository's own here.");
 
     assert.deepEqual(names(cwd, sources), ["here", "repo-wide"]);
@@ -104,20 +112,26 @@ test("the nearest folder of a name wins", () => {
     );
 });
 
-test("a project Pi was told not to trust offers no skills", () => {
+test("a project offers no skills until Pi is told to trust it", () => {
     const { agentDir, repo, cwd, sources } = fixture();
+
+    // No decision: nothing loads, and nothing is asked of Pi's own setting here.
+    assert.deepEqual(names(cwd, sources), []);
+    assert.deepEqual(names(cwd, { ...sources, defaultProjectTrust: "always" }), [
+        "here",
+        "repo-wide",
+    ]);
+    assert.deepEqual(names(cwd, { ...sources, defaultProjectTrust: "never" }), []);
 
     // A saved no for the repository counts for the folder in it.
     new ProjectTrustStore(agentDir).set(repo, false);
     assert.deepEqual(names(cwd, sources), []);
 
-    // Pi's own setting, where nobody decided: "never" keeps them out too.
-    const { cwd: other, sources: asking } = fixture();
-    const never: SkillSources = { ...asking, defaultProjectTrust: "never" };
-
-    assert.deepEqual(names(other, never), []);
-    // Nobody decided, and Pi's setting asks: Pi Pocket cannot ask here, so the project's skills load.
-    assert.deepEqual(names(other, asking), ["here", "repo-wide"]);
+    // A saved yes is the one thing that loads them, and the nearest saved answer wins.
+    trusting(agentDir, repo);
+    assert.deepEqual(names(cwd, sources), ["here", "repo-wide"]);
+    new ProjectTrustStore(agentDir).set(cwd, false);
+    assert.deepEqual(names(cwd, { ...sources, defaultProjectTrust: "always" }), []);
 });
 
 test("an answer saved with saveProjectTrust decides the skills, and the prompts too", () => {
@@ -158,8 +172,26 @@ test("readProjectTrust reports the folders nearest first, and the skills in them
     assert.equal(trust.settings, false);
 });
 
+test("the walk stops at the repository's root, and outside a repository at the folder itself", () => {
+    const { agentDir, base, repo, sources } = fixture();
+
+    trusting(agentDir, repo);
+    // Above the repository: not the project's. Below it, without one: only the folder itself.
+    const loose = join(base, "loose", "inner");
+
+    mkdirSync(loose, { recursive: true });
+    skill(join(base, "loose", ".pi-pocket", "skills"), "above-it");
+    skill(join(loose, ".pi-pocket", "skills"), "its-own");
+    new ProjectTrustStore(agentDir).set(loose, true);
+    assert.deepEqual(skillPlaces(loose, sources), [join(loose, ".pi-pocket", "skills")]);
+    assert.deepEqual(names(loose, sources), ["its-own"]);
+});
+
 test("a skill linked into two folders is listed once", () => {
-    const { repo, cwd, sources } = fixture();
+    const { agentDir, repo, cwd, sources } = fixture();
+
+    trusting(agentDir, repo);
+
     const shared = join(repo, "shared-skills", "linked");
 
     mkdirSync(shared, { recursive: true });
