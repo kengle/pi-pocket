@@ -283,7 +283,7 @@ const openToken = async (name: string, target = page) => {
 };
 
 const tokenFile = () =>
-    JSON.parse(readFileSync(join(folder, ".pi", "design", "tokens.json"), "utf8"));
+    JSON.parse(readFileSync(join(folder, ".pi-pocket", "design", "tokens.json"), "utf8"));
 
 before(async () => {
     if (chromium === undefined) {
@@ -324,7 +324,7 @@ body { margin: 0; padding: 24px; background: ${hex("color.bg.canvas")}; font: 16
 
     writeSystemFixture(faint);
 
-    const darkFile = join(faint, ".pi", "design", "tokens.dark.json");
+    const darkFile = join(faint, ".pi-pocket", "design", "tokens.dark.json");
     const dark = JSON.parse(readFileSync(darkFile, "utf8"));
 
     dark.color.text.primary = { $value: "{color.gray.700}" };
@@ -335,8 +335,8 @@ body { margin: 0; padding: 24px; background: ${hex("color.bg.canvas")}; font: 16
 
     writeSystemFixture(three);
     writeFileSync(
-        join(three, ".pi", "design", "tokens.high-contrast.json"),
-        readFileSync(join(three, ".pi", "design", "tokens.dark.json")),
+        join(three, ".pi-pocket", "design", "tokens.high-contrast.json"),
+        readFileSync(join(three, ".pi-pocket", "design", "tokens.dark.json")),
     );
     threeSession = (await app.commands.createSession(owner(app), { cwd: three })).id;
     await publishAll(app, threeSession);
@@ -350,7 +350,7 @@ body { margin: 0; padding: 24px; background: ${hex("color.bg.canvas")}; font: 16
 
     cpSync(
         new URL("../docs/examples/design-system/pocket/.pi", import.meta.url),
-        join(rich, ".pi"),
+        join(rich, ".pi-pocket"),
         {
             recursive: true,
         },
@@ -729,7 +729,7 @@ test(
         );
         assert.equal(tokenFile().color.accent.default.$value, "#e8590c");
         assert.match(
-            readFileSync(join(folder, ".pi", "design", "dist", "tokens.css"), "utf8"),
+            readFileSync(join(folder, ".pi-pocket", "design", "dist", "tokens.css"), "utf8"),
             /--color-accent-default: #e8590c/,
         );
         assert.equal(
@@ -845,8 +845,9 @@ test(
             `return JSON.stringify(Boolean(document.querySelector(".dsy-saved")))`,
         );
         assert.equal(
-            JSON.parse(readFileSync(join(folder, ".pi", "design", "tokens.dark.json"), "utf8"))
-                .color.text.muted.$value,
+            JSON.parse(
+                readFileSync(join(folder, ".pi-pocket", "design", "tokens.dark.json"), "utf8"),
+            ).color.text.muted.$value,
             "#c0c8e0",
         );
         assert.equal(tokenFile().color.text.muted.$value, "{color.gray.600}");
@@ -939,9 +940,9 @@ test(
         );
 
         const light = JSON.parse(
-            readFileSync(join(folder, ".pi", "design", "tokens.json"), "utf8"),
+            readFileSync(join(folder, ".pi-pocket", "design", "tokens.json"), "utf8"),
         );
-        const darkFile = join(folder, ".pi", "design", "tokens.dark.json");
+        const darkFile = join(folder, ".pi-pocket", "design", "tokens.dark.json");
         const lightHex = loadDesignSystem(folder)!.tokens.find(
             (each) => each.name === "color.border.strong",
         )!.modes.light!.hex;
@@ -978,8 +979,8 @@ test(
         );
         assert.equal(JSON.parse(readFileSync(darkFile, "utf8")).color?.border?.strong, undefined);
         assert.deepEqual(
-            JSON.parse(readFileSync(join(folder, ".pi", "design", "tokens.json"), "utf8")).color
-                .border.strong,
+            JSON.parse(readFileSync(join(folder, ".pi-pocket", "design", "tokens.json"), "utf8"))
+                .color.border.strong,
             light.color.border.strong,
         );
         assert.match(
@@ -1061,7 +1062,7 @@ test(
         assert.equal(value.color, "{color.scrim.40}");
         assert.deepEqual(value.offsetX, { value: 1, unit: "px" });
         assert.match(
-            readFileSync(join(folder, ".pi", "design", "dist", "tokens.css"), "utf8"),
+            readFileSync(join(folder, ".pi-pocket", "design", "dist", "tokens.css"), "utf8"),
             /--shadow-lg: 1px var\(--space-4\) var\(--space-8\)/,
         );
 
@@ -1446,7 +1447,7 @@ test(
             `return JSON.stringify(Boolean(document.querySelector(".dsy-saved")))`,
         );
         assert.equal(
-            readFileSync(join(folder, ".pi", "design", "guidelines.md"), "utf8"),
+            readFileSync(join(folder, ".pi-pocket", "design", "guidelines.md"), "utf8"),
             "# Harbor\n\nCalm.\n",
         );
         await waitFor(
@@ -1469,7 +1470,7 @@ test(
             `return JSON.stringify(Boolean(document.querySelector(".dsy-savebar")))`,
         );
 
-        const file = join(folder, ".pi", "design", "tokens.json");
+        const file = join(folder, ".pi-pocket", "design", "tokens.json");
         const tokens = JSON.parse(readFileSync(file, "utf8"));
 
         tokens.color.border.default.$value = "#abcdef";
@@ -1515,7 +1516,7 @@ test("a save that the system refuses shows why, and keeps the edits", real, asyn
         `return JSON.stringify(Boolean(document.querySelector(".dsy-savebar")))`,
     );
 
-    const file = join(folder, ".pi", "design", "tokens.json");
+    const file = join(folder, ".pi-pocket", "design", "tokens.json");
     const before = readFileSync(file, "utf8");
 
     try {
@@ -2249,7 +2250,7 @@ test("a mode is added and removed from the menu", real, async () => {
         "the mode",
         `return JSON.stringify(document.querySelectorAll(".dsy-modes button").length === 4)`,
     );
-    assert.ok(existsSync(join(folder, ".pi", "design", "tokens.high-contrast.json")));
+    assert.ok(existsSync(join(folder, ".pi-pocket", "design", "tokens.high-contrast.json")));
     await pressed('.dsy-bars button[aria-label="More"]');
     await pressed(".dsn-menu-item", "Modes");
     await waitFor(
@@ -2270,7 +2271,7 @@ test("a mode is added and removed from the menu", real, async () => {
         "gone",
         `return JSON.stringify(document.querySelectorAll(".dsy-modes button").length === 3)`,
     );
-    assert.ok(!existsSync(join(folder, ".pi", "design", "tokens.high-contrast.json")));
+    assert.ok(!existsSync(join(folder, ".pi-pocket", "design", "tokens.high-contrast.json")));
 });
 
 test("a viewer sees the whole system and can change none of it", real, async () => {
@@ -2329,8 +2330,8 @@ test(
         const none = mkdtempSync(join(root, "none-"));
         const old = mkdtempSync(join(root, "old-"));
 
-        mkdirSync(join(old, ".pi"), { recursive: true });
-        writeFileSync(join(old, ".pi", "design-system.md"), "# Old\n\nAccent #3b6cf6.\n");
+        mkdirSync(join(old, ".pi-pocket"), { recursive: true });
+        writeFileSync(join(old, ".pi-pocket", "design-system.md"), "# Old\n\nAccent #3b6cf6.\n");
 
         const bare = (await app.commands.createSession(owner(app), { cwd: none })).id;
         const older = (await app.commands.createSession(owner(app), { cwd: old })).id;
@@ -2372,7 +2373,7 @@ test(
 
         writeSystemFixture(broken);
         writeFileSync(
-            join(broken, ".pi", "design", "tokens.dark.json"),
+            join(broken, ".pi-pocket", "design", "tokens.dark.json"),
             JSON.stringify({ color: { accent: { hover: { $value: "{color.missing}" } } } }),
         );
 

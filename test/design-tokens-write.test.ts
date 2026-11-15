@@ -36,7 +36,7 @@ function project(): string {
     return dir;
 }
 
-const design = (dir: string, ...parts: string[]) => join(dir, ".pi", "design", ...parts);
+const design = (dir: string, ...parts: string[]) => join(dir, ".pi-pocket", "design", ...parts);
 const read = (dir: string, ...parts: string[]) => readFileSync(design(dir, ...parts), "utf8");
 const files = (dir: string) =>
     readdirSync(design(dir), { recursive: true })
@@ -429,21 +429,21 @@ test("limits on file size", () => {
     assert.equal(system.components.length, 1);
 });
 
-test("links: a symlinked .pi or .pi/design throws; a symlinked file is a problem; a write replaces the link, not its target", () => {
+test("links: a symlinked .pi or .pi-pocket/design throws; a symlinked file is a problem; a write replaces the link, not its target", () => {
     const dir = project();
     const outside = project();
 
     writeFileSync(join(outside, "secret.json"), '{"leak":{"$value":"1","$type":"number"}}');
-    symlinkSync(outside, join(dir, ".pi"));
+    symlinkSync(outside, join(dir, ".pi-pocket"));
     assert.throws(() => loadDesignSystem(dir), /symlink/);
     assert.throws(() => writeDesignSystem(dir, { tokens: tokens() }), /symlink/);
-    rmSync(join(dir, ".pi"));
+    rmSync(join(dir, ".pi-pocket"));
 
-    mkdirSync(join(dir, ".pi"));
-    symlinkSync(outside, join(dir, ".pi", "design"));
+    mkdirSync(join(dir, ".pi-pocket"));
+    symlinkSync(outside, join(dir, ".pi-pocket", "design"));
     assert.throws(() => loadDesignSystem(dir), /symlink/);
     assert.throws(() => writeDesignSystem(dir, { tokens: tokens() }), /symlink/);
-    rmSync(join(dir, ".pi", "design"));
+    rmSync(join(dir, ".pi-pocket", "design"));
 
     mkdirSync(design(dir));
     symlinkSync(join(outside, "secret.json"), design(dir, "tokens.json"));

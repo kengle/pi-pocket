@@ -69,7 +69,7 @@ test("with no design system, the link gets a note that says how to make one", as
 
     assert.match(
         reply,
-        /The page links ds\/tokens\.css, but this project has no design system \(\.pi\/design\/\)/,
+        /The page links ds\/tokens\.css, but this project has no design system \(\.pi-pocket\/design\/\)/,
     );
     assert.match(reply, /design_system init/);
     assert.deepEqual(await names("no-system"), []);
@@ -197,10 +197,10 @@ test("an inline artifact attaches too, and a replayed call finds the version it 
 
 test("a design system with errors is attached, and the note says to validate", async () => {
     writeDesignSystem(work, {});
-    rmSync(join(work, ".pi", "design", "tokens.json"));
+    rmSync(join(work, ".pi-pocket", "design", "tokens.json"));
     const { writeFileSync } = await import("node:fs");
 
-    writeFileSync(join(work, ".pi", "design", "tokens.json"), "{ nope");
+    writeFileSync(join(work, ".pi-pocket", "design", "tokens.json"), "{ nope");
 
     const reply = await publish(artifact, {
         id: "broken",

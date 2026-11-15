@@ -3489,17 +3489,15 @@ export class PocketApp {
             });
         }
 
-        let settingsPaths: string[] = [];
         let defaultProjectTrust: SkillSources["defaultProjectTrust"] = "ask";
 
         try {
-            settingsPaths = this.settings.getSkillPaths();
             defaultProjectTrust = this.settings.getDefaultProjectTrust();
         } catch {
-            // Unreadable settings: the default folders still count, and no project is trusted unasked.
+            // Unreadable settings: no project is trusted unasked.
         }
 
-        return { agentDir: agentDir(), home: this.#home, settingsPaths, defaultProjectTrust };
+        return { agentDir: agentDir(), defaultProjectTrust };
     }
 
     /** Pi's skills for a session working in `cwd`, from the places Pi looks (`skills.ts`). */
@@ -3537,7 +3535,7 @@ export class PocketApp {
         if (now.unreadable) {
             throw new HttpError(
                 409,
-                "Pi's trust store (~/.pi/agent/trust.json) cannot be read, so no answer can be saved. Mend or delete it first.",
+                "Pi's trust store (trust.json in its agent folder) cannot be read, so no answer can be saved. Mend or delete it first.",
             );
         }
 
@@ -3586,7 +3584,7 @@ export class PocketApp {
             );
         }
 
-        // A project told "Don't trust" offers none of its own, as its .pi/skills.
+        // A project told "Don't trust" offers none of its own, as its .pi-pocket/skills.
         return loadPromptTemplates(cwd, agentDir(), paths, {
             project: !projectDistrusted(cwd, this.#skillSources()),
         });

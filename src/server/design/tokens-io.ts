@@ -75,14 +75,14 @@ function hasDesignFolder(cwd: string): boolean {
         throw new Error("The project's .pi path must be a folder.");
     }
 
-    const design = kindOf(join(cwd, DESIGN_DIR), ".pi/design");
+    const design = kindOf(join(cwd, DESIGN_DIR), ".pi-pocket/design");
 
     if (design === undefined) {
         return false;
     }
 
     if (design !== "directory") {
-        throw new Error(".pi/design must be a folder.");
+        throw new Error(".pi-pocket/design must be a folder.");
     }
 
     return true;
@@ -201,7 +201,7 @@ export function readFolder(cwd: string): Folder | undefined {
     try {
         entries = readdirSync(root, { withFileTypes: true }).slice(0, 500);
     } catch (error) {
-        throw new Error(`.pi/design could not be read: ${(error as Error).message}`);
+        throw new Error(`.pi-pocket/design could not be read: ${(error as Error).message}`);
     }
 
     let modeFiles = 0;
@@ -351,7 +351,7 @@ export function writeFiles(cwd: string, files: Map<string, string | null>): Writ
 
     forgetSystem(cwd);
     ensureFolder(projectDir(cwd), "The project's .pi folder");
-    ensureFolder(join(cwd, DESIGN_DIR), ".pi/design");
+    ensureFolder(join(cwd, DESIGN_DIR), ".pi-pocket/design");
 
     const root = join(cwd, DESIGN_DIR);
 

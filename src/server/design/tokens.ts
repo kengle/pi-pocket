@@ -52,7 +52,7 @@ export function loadDesignSystem(cwd: string): DesignSystem | undefined {
 }
 
 /**
- * The project's design system with the files it was read from, or undefined when `.pi/design/` is absent. The raw trees
+ * The project's design system with the files it was read from, or undefined when `.pi-pocket/design/` is absent. The raw trees
  * hold every token path the files declare, the ones the engine drops because they do not resolve included, so a resync
  * keeps those as they are. The system and the raw trees come from one read, and the read is not the cache's: a resync
  * compares the code with the files a write would keep, and reads them again after its scan. Writes nothing.

@@ -408,7 +408,7 @@ Calm, clear, and quick to read at a dock in the wind.
 `;
 
 export function writeSystemFixture(cwd: string, { dark = true } = {}): void {
-    const root = join(cwd, ".pi", "design");
+    const root = join(cwd, ".pi-pocket", "design");
 
     mkdirSync(join(root, "components"), { recursive: true });
     writeFileSync(join(root, "tokens.json"), `${JSON.stringify(TOKENS, null, 4)}\n`);

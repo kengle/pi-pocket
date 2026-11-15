@@ -198,7 +198,7 @@ function afterWrite(system: DesignSystem, headline: string): string {
 
     return [
         headline,
-        `Design system "${system.name}": ${system.tokens.length} tokens, modes ${system.modes.join(", ")}, ${system.components.length} component${system.components.length === 1 ? "" : "s"}. Compiled .pi/design/dist/: tokens.css ${sizeOf(dist.css)}, tailwind.css ${sizeOf(dist.tailwind)}, tokens.<mode>.resolved.json for ${Object.keys(dist.modes ?? {}).length} mode${Object.keys(dist.modes ?? {}).length === 1 ? "" : "s"}, tokens.studio.json, names.md, tokens.resolved.json (compact) ${sizeOf(dist.json)}, components.css ${sizeOf(dist.components)}.`,
+        `Design system "${system.name}": ${system.tokens.length} tokens, modes ${system.modes.join(", ")}, ${system.components.length} component${system.components.length === 1 ? "" : "s"}. Compiled .pi-pocket/design/dist/: tokens.css ${sizeOf(dist.css)}, tailwind.css ${sizeOf(dist.tailwind)}, tokens.<mode>.resolved.json for ${Object.keys(dist.modes ?? {}).length} mode${Object.keys(dist.modes ?? {}).length === 1 ? "" : "s"}, tokens.studio.json, names.md, tokens.resolved.json (compact) ${sizeOf(dist.json)}, components.css ${sizeOf(dist.components)}.`,
         problemsText(system),
         'A design uses it with <link rel="stylesheet" href="ds/tokens.css"> (and ds/components.css): the artifact tool attaches the current files.',
     ]
@@ -279,7 +279,7 @@ function checkParameters(action: string, args: Record<string, unknown>): void {
 }
 
 /**
- * The plan of a resync for a scan's draft, and the system as the folder has it now. It reads `.pi/design/` again because
+ * The plan of a resync for a scan's draft, and the system as the folder has it now. It reads `.pi-pocket/design/` again because
  * the scan runs in between and the folder can change while it does: an edit made in that time is in the plan, so a write
  * keeps it instead of writing the scan's token over it.
  */
@@ -288,7 +288,7 @@ export function resyncPlan(cwd: string, draft: Draft): { system: DesignSystem; p
 
     if (loaded === undefined || loaded.system.tokens.length === 0) {
         throw new Error(
-            "The design system changed while the scan ran: .pi/design/ is gone or has no tokens now, so resync has nothing to keep. Run resync again.",
+            "The design system changed while the scan ran: .pi-pocket/design/ is gone or has no tokens now, so resync has nothing to keep. Run resync again.",
         );
     }
 
@@ -299,7 +299,7 @@ export function designSystemTool(): ToolRegistration {
     return defineTool({
         name: "design_system",
         description: [
-            'The project\'s design system in .pi/design/: DTCG tokens (tokens.json), a file for each other mode (tokens.dark.json), component specimens (components/<slug>.html), and guidelines.md. It compiles to dist/ (tokens.css, tailwind.css, components.css, resolved JSON). A design links <link rel="stylesheet" href="ds/tokens.css"> and uses only var(--…) values. Every change is checked first; nothing is written when it adds an error; a disk error partway through saving can leave the files before it saved.',
+            'The project\'s design system in .pi-pocket/design/: DTCG tokens (tokens.json), a file for each other mode (tokens.dark.json), component specimens (components/<slug>.html), and guidelines.md. It compiles to dist/ (tokens.css, tailwind.css, components.css, resolved JSON). A design links <link rel="stylesheet" href="ds/tokens.css"> and uses only var(--…) values. Every change is checked first; nothing is written when it adds an error; a disk error partway through saving can leave the files before it saved.',
             "Examples:",
             '- read: {"action":"read"} or {"action":"read","file":"dist/tokens.css"}',
             '- scan: {"action":"scan","path":"src"} (a draft from the style files; saves nothing)',
@@ -436,7 +436,7 @@ export function designSystemTool(): ToolRegistration {
 
                     if (loadDesignSystem(cwd) !== undefined) {
                         throw new Error(
-                            "This project has a design system folder (.pi/design/), which replaces .pi/design-system.md. Change it with set, component, guidelines, or init (replace: true).",
+                            "This project has a design system folder (.pi-pocket/design/), which replaces .pi-pocket/design-system.md. Change it with set, component, guidelines, or init (replace: true).",
                         );
                     }
 
@@ -453,7 +453,7 @@ export function designSystemTool(): ToolRegistration {
 
                     if (existing && args.replace !== true) {
                         throw new Error(
-                            "A design system already exists in .pi/design/. Change it with set, component, or guidelines, or with resync when the code changed; or pass replace: true to start over (the old tokens are overwritten).",
+                            "A design system already exists in .pi-pocket/design/. Change it with set, component, or guidelines, or with resync when the code changed; or pass replace: true to start over (the old tokens are overwritten).",
                         );
                     }
 
@@ -504,7 +504,7 @@ export function designSystemTool(): ToolRegistration {
 
                     if (system === undefined) {
                         throw new Error(
-                            "There is no design system to resync (.pi/design/ is absent). Make one with scan, then init with fromScan: true; resync updates a system that exists.",
+                            "There is no design system to resync (.pi-pocket/design/ is absent). Make one with scan, then init with fromScan: true; resync updates a system that exists.",
                         );
                     }
 
@@ -655,7 +655,7 @@ export function designSystemTool(): ToolRegistration {
                         const file = readDesignFile(cwd, args.file);
 
                         if (file === undefined) {
-                            throw new Error(`${args.file} does not exist in .pi/design/.`);
+                            throw new Error(`${args.file} does not exist in .pi-pocket/design/.`);
                         }
 
                         return text(
@@ -693,7 +693,7 @@ export function designSystemTool(): ToolRegistration {
 }
 
 function noSystem(): string {
-    return `There is no design system in this session yet (no .pi/design/ and no ${SYSTEM_FILE}). Run design_system scan for a draft from the project's styles, then init with fromScan: true (or your own tokens); or init with tokens when there is no code to scan.`;
+    return `There is no design system in this session yet (no .pi-pocket/design/ and no ${SYSTEM_FILE}). Run design_system scan for a draft from the project's styles, then init with fromScan: true (or your own tokens); or init with tokens when there is no code to scan.`;
 }
 
 function readFolderTokens(cwd: string): boolean {

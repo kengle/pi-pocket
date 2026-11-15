@@ -1,60 +1,24 @@
 /**
- * Pi's skills for a session's folder, from the places Pi's CLI looks, in its order. The first skill of a name wins:
+ * Pi's skills for a session's folder. One place: `<dir>/.pi-pocket/skills` in the session's folder and in each folder
+ * above it, nearest first, up to the root of its git repository (or `/` outside one). The first skill of a name wins.
  *
- * 1. `.pi/skills/` in the session's folder, unless Pi was told not to trust the project.
- * 2. `.agents/skills/` in the session's folder and each folder above it, nearest first, up to the root of its git
- *    repository, or to `/` outside one. Only in a project Pi trusts, below.
- * 3. The skill paths in Pi's settings.
- * 4. `skills/` in Pi's folder (`~/.pi/agent/skills/`).
- * 5. `~/.agents/skills/`, for every session.
- *
- * The `skills` setting works as in Pi: a relative path is from Pi's folder; `-path` and `+path` (exact), and `!pattern`
- * (a glob) turn skills off or on, and so does a plain glob among the paths. The exclusions count for the settings'
- * paths and for places 4 and 5, not for the project's own folders (only the project's own settings reach those).
+ * Pi's own folder and the home folder keep no skills that a session loads: a project's skills are the project's, and a
+ * skill for every project lives in the home folder's project, if its person put one there.
  *
  * Pi trusts a project when its trust store (`trust.json` in Pi's folder) says so for the folder or one above it, or
- * says nothing and Pi's `defaultProjectTrust` setting is "always". Where it says nothing, the CLI asks when it starts.
- * Pi Pocket asks its owner (`readProjectTrust` says when) and saves the answer in the same store, with the three
- * answers the CLI's `/trust` saves (`saveProjectTrust`); until then the project is not trusted, as when Pi runs without
- * a terminal. Pi also asks before it loads `.pi/skills/`: Pi Pocket loads those until it is told not to trust the
- * project (a saved "no", or `defaultProjectTrust` "never"), as it always has, and then leaves them out as Pi does.
- *
- * The search for `.agents/skills/` stops at the repository's root, as Pi's loading does; Pi's question also counts
- * folders above the root, whose skills it never loads, so Pi Pocket does not ask about those.
- *
- * This follows `addAutoDiscoveredResources`, `collectAncestorAgentsSkillDirs`, `resolveLocalEntries`, `applyPatterns`,
- * and `isEnabledByOverrides` in `dist/core/package-manager.js`,
- * `resolveProjectTrusted` in `dist/core/project-trust.js`, and `getProjectTrustOptions` in `dist/core/trust-manager.js`
- * of @earendil-works/pi-coding-agent, which the package does not export: check them when updating Pi. Pi's
- * `DefaultPackageManager.resolve` is the one export that applies the setting, but it is async, takes the project's
- * trust from Pi's own settings object, and loads package skills: Pi Pocket keeps its trust code and its folders.
- * `test/skills.test.ts` checks the skills against Pi's own loader.
+ * says nothing and Pi's `defaultProjectTrust` setting is "always". Pi Pocket asks its owner (`readProjectTrust` says
+ * when) and saves the answer in the same store, with the three answers Pi's `/trust` saves (`saveProjectTrust`). A
+ * project Pi was told not to trust offers none of its skills, and its `.pi-pocket/prompts` stay out too.
  */
-import { existsSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import {
-    loadSkills,
-    loadSkillsFromDir,
-    ProjectTrustStore,
-    type Skill,
-} from "@earendil-works/pi-coding-agent";
-import {
-    homeSkillsDir,
-    projectSettingsFile,
-    promptsSubdir,
-    skillsSubdir,
-    userSkillsDir,
-} from "./paths.ts";
-import { minimatch } from "minimatch";
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { loadSkills, ProjectTrustStore, type Skill } from "@earendil-works/pi-coding-agent";
+import { projectSettingsFile, promptsSubdir, skillsSubdir } from "./paths.ts";
 
 /** What, besides the session's folder, says where skills are. */
 export type SkillSources = {
-    /** Pi's folder (`~/.pi/agent`): its `skills/`, and `trust.json`, which projects Pi was told to trust or not. */
+    /** Pi's folder: its `trust.json`, which projects Pi was told to trust or not. */
     agentDir: string;
-    /** The home folder, whose `.agents/skills/` every session has. */
-    home: string;
-    /** The skill paths in Pi's settings. */
-    settingsPaths: readonly string[];
     /** Pi's `defaultProjectTrust` setting: whether a project nobody decided about is trusted. */
     defaultProjectTrust: "always" | "never" | "ask";
 };
@@ -72,17 +36,15 @@ function gitRoot(folder: string): string | undefined {
     }
 }
 
-/** The project's `.agents/skills/` folders, nearest first: in `cwd` and above it, up to its repository's root. */
-function projectAgentsFolders(cwd: string, home: string): string[] {
+/** The project's skill folders: `<dir>/.pi-pocket/skills` in `cwd` and above it, nearest first, to the repo's root. */
+function projectSkillFolders(cwd: string): string[] {
     const top = gitRoot(cwd);
-    const own = resolve(home, ".agents", "skills");
     const folders: string[] = [];
 
     for (let current = cwd; ; current = dirname(current)) {
-        const folder = join(current, ".agents", "skills");
+        const folder = skillsSubdir(current);
 
-        // The home folder's is everyone's, not the project's, even in a session in the home folder.
-        if (folder !== own && existsSync(folder)) {
+        if (existsSync(folder)) {
             folders.push(folder);
         }
 
@@ -90,65 +52,6 @@ function projectAgentsFolders(cwd: string, home: string): string[] {
             return folders;
         }
     }
-}
-
-/** The `SKILL.md` files (or skill files) under `path`, a skill folder or file. */
-function skillFilesAt(path: string): string[] {
-    if (!existsSync(path)) {
-        return [];
-    }
-
-    return statSync(path).isDirectory()
-        ? loadSkillsFromDir({ dir: path, source: "path" }).skills.map((each) => each.filePath)
-        : path.endsWith(".md")
-          ? [path]
-          : [];
-}
-
-/** Whether `path` is an override (`!`, `+`, `-`) or a glob, rather than a plain path, among Pi's settings entries. */
-const isPattern = (path: string) => /^[-+!]|[*?]/.test(path);
-
-/**
- * The files `entries` (Pi's `skills` setting) leave on, as Pi's `applyPatterns` decides, with paths and globs from
- * `base`. A plain glob includes, `!` excludes, `+` puts an exact path back, and `-` takes an exact path out.
- */
-function enabledBy(files: string[], entries: string[], base: string, home: string): string[] {
-    const posix = (path: string) => path.split(sep).join("/");
-    const unTilde = (path: string) =>
-        path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : path;
-    const withKey = (key: string) =>
-        entries.filter((each) => each.startsWith(key)).map((each) => each.slice(1));
-    const [excludes, forceIn, forceOut] = ["!", "+", "-"].map(withKey) as [
-        string[],
-        string[],
-        string[],
-    ];
-    const includes = entries.filter((each) => !/^[-+!]/.test(each));
-
-    const matches = (file: string, patterns: string[], exact: boolean) => {
-        const skill = basename(file) === "SKILL.md";
-        const places = [file, ...(skill ? [dirname(file)] : [])];
-        const keys = places.flatMap((each) => [posix(relative(base, each)), posix(each)]);
-
-        return patterns.some((pattern) => {
-            const form = posix(unTilde(exact ? pattern.replace(/^\.[/\\]/, "") : pattern));
-
-            return exact
-                ? keys.includes(form)
-                : [...keys, ...places.map((each) => basename(each))].some((key) =>
-                      minimatch(key, form),
-                  );
-        });
-    };
-
-    return files.filter((file) => {
-        let on = includes.length === 0 || matches(file, includes, false);
-
-        on &&= !matches(file, excludes, false);
-        on ||= matches(file, forceIn, true);
-
-        return on && !matches(file, forceOut, true);
-    });
 }
 
 /** The answers Pi's `/trust` offers: trust the folder, trust the folder above it (and so this one too), or not. */
@@ -169,13 +72,13 @@ export type ProjectTrust = {
     defaultProjectTrust: SkillSources["defaultProjectTrust"];
     /** Whether Pi trusts the project now. */
     trusted: boolean;
-    /** The project's `.agents/skills/` folders. */
+    /** The project's `.pi-pocket/skills` folders, nearest first. */
     folders: string[];
     /** The skills in them. */
     skills: { name: string; description: string }[];
-    /** The skills in its `.pi/skills/`, which load unless Pi was told not to trust it. */
+    /** The skills in its own `.pi-pocket/skills`, which load unless Pi was told not to trust it. */
     ownSkills: { name: string; description: string }[];
-    /** The project has a .pi/settings.json file, whose model defaults require trust. */
+    /** The project has a `.pi-pocket/settings.json` file, whose model defaults require trust. */
     settings: boolean;
     /** Whether to ask the owner: project skills or settings exist, no decision applies, and Pi's setting is to ask. */
     ask: boolean;
@@ -227,8 +130,8 @@ function decides(saved: Saved | null | undefined, sources: SkillSources): Decisi
 
 /**
  * Whether Pi was told not to trust the project a session in `cwd` works in (a saved "no", or `defaultProjectTrust`
- * "never"), for what of its own `.pi` folder trust gates: its `.pi/prompts` stay out then, as its `.pi/skills` do. The
- * trust store is read only for a project with `.pi/prompts`.
+ * "never"), for what of its own `.pi-pocket` folder trust gates: its prompts stay out then, as its skills do. The trust
+ * store is read only for a project with prompts.
  */
 export function projectDistrusted(cwd: string, sources: SkillSources): boolean {
     const folder = resolve(cwd);
@@ -239,48 +142,17 @@ export function projectDistrusted(cwd: string, sources: SkillSources): boolean {
     );
 }
 
-/** Where a session in `cwd` loads skills from, in order: the project's folders, then skill files Pi's settings leave on. */
+/** Where a session in `cwd` loads skills from: its project's folders, nearest first, unless it is not trusted. */
 export function skillPlaces(cwd: string, sources: SkillSources): string[] {
     const folder = resolve(cwd);
-    const own = skillsSubdir(folder);
-    const hasOwn = existsSync(own);
-    const agents = projectAgentsFolders(folder, sources.home);
-    // The trust store is read only for a project with skills of its own: Pi needs no trust from one without.
-    const decision =
-        hasOwn || agents.length > 0
-            ? decides(savedDecision(folder, sources.agentDir), sources)
-            : "undecided";
-    // Pi's folder and the home folder's `.agents` are the base of the exclusions for the skills in each.
-    const user: [string, string][] = [
-        [userSkillsDir(sources.agentDir), sources.agentDir],
-        [homeSkillsDir(sources.home), join(sources.home, ".agents")],
-    ];
-    const entries = [...sources.settingsPaths];
-    const paths = entries.filter((each) => !isPattern(each));
-    const listed = paths.flatMap((raw) => {
-        const each = raw.trim();
+    const places = projectSkillFolders(folder);
 
-        return skillFilesAt(
-            resolve(
-                sources.agentDir,
-                each.startsWith("~/") ? join(sources.home, each.slice(2)) : each,
-            ),
-        );
-    });
+    if (places.length === 0) {
+        return [];
+    }
 
-    return [
-        ...(hasOwn && decision !== "distrusted" ? [own] : []),
-        ...(decision === "trusted" ? agents : []),
-        ...enabledBy(listed, entries.filter(isPattern), sources.agentDir, sources.home),
-        ...user.flatMap(([folder, base]) =>
-            enabledBy(
-                skillFilesAt(folder),
-                entries.filter((each) => /^[-+!]/.test(each)),
-                base,
-                sources.home,
-            ),
-        ),
-    ];
+    // Not trusted: the project offers nothing, as its `.pi-pocket/prompts` stay out too (`projectDistrusted`).
+    return decides(savedDecision(folder, sources.agentDir), sources) === "distrusted" ? [] : places;
 }
 
 /** Pi's skills for a session in `cwd`: the first of each name, from `skillPlaces`. */
@@ -298,7 +170,7 @@ export function readProjectTrust(cwd: string, sources: SkillSources): ProjectTru
     const folder = canonical(cwd);
     const parent = dirname(folder);
     const saved = savedDecision(cwd, sources.agentDir);
-    const folders = projectAgentsFolders(resolve(cwd), sources.home);
+    const folders = projectSkillFolders(resolve(cwd));
     const own = skillsSubdir(resolve(cwd));
     const skillsIn = (paths: string[]) =>
         paths.length === 0

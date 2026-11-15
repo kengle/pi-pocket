@@ -62,9 +62,9 @@ async function saved(options: Parameters<typeof styles>[0] = {}): Promise<string
     return dir;
 }
 
-/** Every file under `.pi/design/`, by relative path, with its text. */
+/** Every file under `.pi-pocket/design/`, by relative path, with its text. */
 function snapshot(dir: string, prefix = "", out: Record<string, string> = {}) {
-    const base = join(dir, ".pi/design", prefix);
+    const base = join(dir, ".pi-pocket/design", prefix);
 
     for (const entry of readdirSync(base, { withFileTypes: true })) {
         const name = join(prefix, entry.name);
@@ -80,19 +80,19 @@ function snapshot(dir: string, prefix = "", out: Record<string, string> = {}) {
 }
 
 const file = (dir: string, name: string) =>
-    JSON.parse(readFileSync(join(dir, ".pi/design", name), "utf8"));
+    JSON.parse(readFileSync(join(dir, ".pi-pocket/design", name), "utf8"));
 const colors = (body: object) => ({ color: { $type: "color", ...body } });
 
 /** A saved system with no scan behind it: `tokens.json` (light by default) and one `tokens.<mode>.json` for each mode. */
 function system(tokens: object, modes: Record<string, object> = {}): string {
     return project({
-        ".pi/design/tokens.json": JSON.stringify({
+        ".pi-pocket/design/tokens.json": JSON.stringify({
             $extensions: { "com.pi-pocket": { name: "Test", mode: "light" } },
             ...tokens,
         }),
         ...Object.fromEntries(
             Object.entries(modes).map(([mode, body]) => [
-                `.pi/design/tokens.${mode}.json`,
+                `.pi-pocket/design/tokens.${mode}.json`,
                 JSON.stringify(body),
             ]),
         ),
@@ -174,18 +174,21 @@ test("apply adds only what is new, keeps what people wrote, and a second apply a
     );
     assert.deepEqual([source.path, source.tokens], [".", 11]);
     assert.match(source.scannedAt, /^\d{4}-\d{2}-\d{2}T/);
-    assert.equal(readFileSync(join(dir, ".pi/design/guidelines.md"), "utf8"), "# Voice\n");
-    assert.equal(readFileSync(join(dir, ".pi/design/components/button.html"), "utf8"), specimen);
+    assert.equal(readFileSync(join(dir, ".pi-pocket/design/guidelines.md"), "utf8"), "# Voice\n");
+    assert.equal(
+        readFileSync(join(dir, ".pi-pocket/design/components/button.html"), "utf8"),
+        specimen,
+    );
 
     const count = loadDesignSystem(dir)?.tokens.length;
-    const css = readFileSync(join(dir, ".pi/design/dist/tokens.css"), "utf8");
+    const css = readFileSync(join(dir, ".pi-pocket/design/dist/tokens.css"), "utf8");
 
     assert.match(
         await say(run(dir, { action: "resync", apply: true })),
         /0 added, 11 kept as they are, 0 differ from the code, 0 not in the code now/,
     );
     assert.equal(loadDesignSystem(dir)?.tokens.length, count, "no token is added twice");
-    assert.equal(readFileSync(join(dir, ".pi/design/dist/tokens.css"), "utf8"), css);
+    assert.equal(readFileSync(join(dir, ".pi-pocket/design/dist/tokens.css"), "utf8"), css);
 
     // A later change to the system keeps the provenance.
     await say(
@@ -279,7 +282,7 @@ test("resync names what is missing: a system, its tokens, style files, or a read
     assert.match(await failure(run(project(), { action: "resync" })), /no design system to resync/);
     assert.match(
         await failure(
-            run(project({ ".pi/design/guidelines.md": "# Rules\n", ...style }), {
+            run(project({ ".pi-pocket/design/guidelines.md": "# Rules\n", ...style }), {
                 action: "resync",
             }),
         ),
@@ -287,7 +290,7 @@ test("resync names what is missing: a system, its tokens, style files, or a read
     );
     assert.match(
         await failure(
-            run(project({ ".pi/design/tokens.json": "{ not json", ...style }), {
+            run(project({ ".pi-pocket/design/tokens.json": "{ not json", ...style }), {
                 action: "resync",
             }),
         ),
@@ -403,7 +406,7 @@ test("the report fences token names and values from the project, and shows at mo
 test("a token whose reference is broken is kept, not written over by the scan's own", async () => {
     // The engine leaves a token out of the system when it fails in a mode; the paths come from the files instead.
     const dir = project({
-        ".pi/design/tokens.json": JSON.stringify({
+        ".pi-pocket/design/tokens.json": JSON.stringify({
             $extensions: { "com.pi-pocket": { name: "Broken", mode: "light" } },
             ...colors({
                 bg: { page: { $value: "#ffffff" } },
@@ -425,7 +428,7 @@ test("a system edited while the scan ran is read again, so the plan does not wri
     const dir = await saved();
     const draft = { tokens: colors({ plum: { $value: "#7c3aed" } }), modes: {} } as Draft;
 
-    // An edit made while the scan ran: resyncPlan is what resync calls after its scan, and it reads `.pi/design/` again.
+    // An edit made while the scan ran: resyncPlan is what resync calls after its scan, and it reads `.pi-pocket/design/` again.
     await say(
         run(dir, {
             action: "set",
@@ -531,12 +534,12 @@ test("an I/O error partway through the write leaves the earlier files written, a
     const dir = await saved();
 
     writeFileSync(join(dir, "src/styles.css"), styles({ plum: "#7c3aed" }));
-    rmSync(join(dir, ".pi/design/dist"), { recursive: true, force: true });
-    writeFileSync(join(dir, ".pi/design/dist"), "not a folder");
+    rmSync(join(dir, ".pi-pocket/design/dist"), { recursive: true, force: true });
+    writeFileSync(join(dir, ".pi-pocket/design/dist"), "not a folder");
 
     // tokens.json goes in first, then dist/, which is a file here.
     assert.match(await failure(run(dir, { action: "resync", apply: true })), /dist/);
     assert.ok(file(dir, "tokens.json").color["plum-500"] !== undefined);
     assert.equal(file(dir, "tokens.json").$extensions["com.pi-pocket"].source.path, ".");
-    assert.equal(readFileSync(join(dir, ".pi/design/dist"), "utf8"), "not a folder");
+    assert.equal(readFileSync(join(dir, ".pi-pocket/design/dist"), "utf8"), "not a folder");
 });

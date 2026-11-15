@@ -22,8 +22,8 @@ before(async () => {
         join(process.env.PI_CODING_AGENT_DIR!, "prompts", "fix.md"),
         "---\ndescription: Fix an issue\n---\nFix issue $1. Keep the change small.",
     );
-    mkdirSync(join(work, ".pi", "prompts"), { recursive: true });
-    writeFileSync(join(work, ".pi", "prompts", "tidy.md"), "Tidy up $@");
+    mkdirSync(join(work, ".pi-pocket", "prompts"), { recursive: true });
+    writeFileSync(join(work, ".pi-pocket", "prompts", "tidy.md"), "Tidy up $@");
     app = await openApp(scriptedModel());
 });
 

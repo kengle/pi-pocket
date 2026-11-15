@@ -114,7 +114,7 @@ const DESIGN_FILES = {
 } as const;
 
 /**
- * Adds the compiled `.pi/design/dist/` files that `content` links and the call does not bring or drop. It reads files
+ * Adds the compiled `.pi-pocket/design/dist/` files that `content` links and the call does not bring or drop. It reads files
  * before the commit, so a replayed call finds what it wrote. Returns notes for the result text.
  */
 async function attachDesignSystem(
@@ -143,7 +143,7 @@ async function attachDesignSystem(
 
     if (system === undefined) {
         return [
-            `The page links ${wanted.join(", ")}, but this project has no design system (.pi/design/), so the link will not load. Create one with design_system init, or remove the link.`,
+            `The page links ${wanted.join(", ")}, but this project has no design system (.pi-pocket/design/), so the link will not load. Create one with design_system init, or remove the link.`,
         ];
     }
 

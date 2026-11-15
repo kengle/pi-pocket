@@ -31,9 +31,9 @@ after(async () => {
 function project(settings: object | string, trusted = true): string {
     const cwd = mkdtempSync(join(root, "project-"));
 
-    mkdirSync(join(cwd, ".pi"));
+    mkdirSync(join(cwd, ".pi-pocket"));
     writeFileSync(
-        join(cwd, ".pi", "settings.json"),
+        join(cwd, ".pi-pocket", "settings.json"),
         typeof settings === "string" ? settings : JSON.stringify(settings),
     );
 

@@ -148,7 +148,10 @@ test("a bot gives a session its instructions, model, thinking level, and skills"
     // faux-1 has no thinking levels, so the bot's high is lowered to the one it has.
     assert.equal(state?.thinkingLevel, "off");
     assert.equal(app.sessionMeta(made.id)?.bot, "reviewer");
-    assert.equal(readFileSync(join(folder, ".pi", "skills", "polish", "SKILL.md"), "utf8"), SKILL);
+    assert.equal(
+        readFileSync(join(folder, ".pi-pocket", "skills", "polish", "SKILL.md"), "utf8"),
+        SKILL,
+    );
 
     // The same bot again, in the same folder: the skill is there as the bot has it, so it stays as it is.
     const again = await app.pip.startBot(id, { bot: "reviewer", folder });
@@ -181,16 +184,16 @@ test("a bot that names a skill the pool does not have makes no session", async (
 test("a bot never writes over a folder of the person's own, and names it", async () => {
     const id = await pip();
     const folder = folderOf("taken");
-    const mine = join(folder, ".pi", "skills", "polish", "SKILL.md");
+    const mine = join(folder, ".pi-pocket", "skills", "polish", "SKILL.md");
     const before = app.sessions().length;
 
     bot("taken", { skills: ["polish"], model: "faux/faux-1" });
-    mkdirSync(join(folder, ".pi", "skills", "polish"), { recursive: true });
+    mkdirSync(join(folder, ".pi-pocket", "skills", "polish"), { recursive: true });
     writeFileSync(mine, "Mine, and not the bot's.\n");
 
     await assert.rejects(
         app.pip.startBot(id, { bot: "taken", folder }),
-        /already in this session's folder, as \.pi\/skills\/polish, with files that are not the bot's/,
+        /already in this session's folder, as \.pi-pocket\/skills\/polish, with files that are not the bot's/,
     );
     assert.equal(app.sessions().length, before, "no session made");
     assert.equal(readFileSync(mine, "utf8"), "Mine, and not the bot's.\n");
@@ -207,8 +210,8 @@ test("a worktree's skills are checked once its folder is made, and the error nam
     git("add", "README.md");
     git("-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "first");
     // A worktree starts with the repository's new files: this skill folder comes with them, and is not the bot's.
-    mkdirSync(join(repo, ".pi", "skills", "polish"), { recursive: true });
-    writeFileSync(join(repo, ".pi", "skills", "polish", "SKILL.md"), "Mine.\n");
+    mkdirSync(join(repo, ".pi-pocket", "skills", "polish"), { recursive: true });
+    writeFileSync(join(repo, ".pi-pocket", "skills", "polish", "SKILL.md"), "Mine.\n");
 
     bot("worktree", { skills: ["polish"], model: "faux/faux-1" });
 
@@ -240,13 +243,13 @@ test("a bot copies its skill without the pool's build caches", async () => {
     const made = await app.pip.startBot(id, { bot: "cached", folder });
 
     assert.deepEqual(made.installed, ["cached"]);
-    assert.deepEqual(readdirSync(join(folder, ".pi", "skills", "cached")), ["SKILL.md"]);
+    assert.deepEqual(readdirSync(join(folder, ".pi-pocket", "skills", "cached")), ["SKILL.md"]);
 });
 
 test("a folder holding only caches takes the skill, with no conflict", async () => {
     const id = await pip();
     const folder = join(root, "bots-cache-only");
-    const target = join(folder, ".pi", "skills", "cached");
+    const target = join(folder, ".pi-pocket", "skills", "cached");
 
     poolSkillWithCaches("cached");
     mkdirSync(join(target, "__pycache__"), { recursive: true });
@@ -308,7 +311,7 @@ test("a session started without a bot is as it was, and no bot made it", async (
     assert.equal(app.sessionMeta(made)?.bot, undefined);
     assert.equal(listed?.bot, undefined);
     await assert.rejects(
-        (async () => readFileSync(join(folder, ".pi", "skills", "polish", "SKILL.md")))(),
+        (async () => readFileSync(join(folder, ".pi-pocket", "skills", "polish", "SKILL.md")))(),
         /ENOENT/,
     );
 });

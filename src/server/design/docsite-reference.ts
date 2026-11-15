@@ -101,11 +101,11 @@ export function codeSection(ctx: Ctx): string {
         ["components.css", "The CSS of every component.", compiled.components],
     ].filter(([, , text]) => text!.trim() !== "");
 
-    return `<div class="prose"><p>The system writes these files to <code>.pi/design/dist/</code>. Never copy a value by hand:</p><ul><li>CSS: link <code>tokens.css</code> and read a token with <code>var(${esc(sample?.cssVar ?? "--color-bg-surface")})</code>.${dark === undefined ? "" : ` Set <code>data-theme="${esc(ctx.slug.get(dark)!)}"</code> on <code>&lt;html&gt;</code> for the ${esc(modeLabel(dark).toLowerCase())} mode.`}</li><li>Tailwind v4: import <code>tailwind.css</code> after Tailwind. Each utility reads a token's variable, so it follows the mode.</li><li>Style Dictionary reads a <code>tokens.&lt;mode&gt;.resolved.json</code> file as it is. Tokens Studio loads <code>tokens.studio.json</code>.</li></ul></div>${files
+    return `<div class="prose"><p>The system writes these files to <code>.pi-pocket/design/dist/</code>. Never copy a value by hand:</p><ul><li>CSS: link <code>tokens.css</code> and read a token with <code>var(${esc(sample?.cssVar ?? "--color-bg-surface")})</code>.${dark === undefined ? "" : ` Set <code>data-theme="${esc(ctx.slug.get(dark)!)}"</code> on <code>&lt;html&gt;</code> for the ${esc(modeLabel(dark).toLowerCase())} mode.`}</li><li>Tailwind v4: import <code>tailwind.css</code> after Tailwind. Each utility reads a token's variable, so it follows the mode.</li><li>Style Dictionary reads a <code>tokens.&lt;mode&gt;.resolved.json</code> file as it is. Tokens Studio loads <code>tokens.studio.json</code>.</li></ul></div>${files
         .map(([title, note, text]) => {
             const id = `code-${idOf(title!)}`;
 
-            return `<details class="fold"><summary>${esc(title!)} <span class="desc">${esc(note!)}</span></summary>${text!.length > FILE_PREVIEW ? `<p class="sub">The first ${FILE_PREVIEW / 1000} KB of ${Math.round(text!.length / 1024)} KB. The whole file is in <code>.pi/design/dist/</code>, and in the zip that the System view exports.</p>` : ""}${snippet(id, clip(text!, FILE_PREVIEW), title!)}</details>`;
+            return `<details class="fold"><summary>${esc(title!)} <span class="desc">${esc(note!)}</span></summary>${text!.length > FILE_PREVIEW ? `<p class="sub">The first ${FILE_PREVIEW / 1000} KB of ${Math.round(text!.length / 1024)} KB. The whole file is in <code>.pi-pocket/design/dist/</code>, and in the zip that the System view exports.</p>` : ""}${snippet(id, clip(text!, FILE_PREVIEW), title!)}</details>`;
         })
         .join("")}`;
 }

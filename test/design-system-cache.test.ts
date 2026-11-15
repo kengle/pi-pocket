@@ -13,8 +13,8 @@ function project(files: Record<string, string>): string {
     const cwd = mkdtempSync(join(tmpdir(), "design-cache-"));
 
     for (const [name, text] of Object.entries(files)) {
-        mkdirSync(join(cwd, ".pi", "design", name, ".."), { recursive: true });
-        writeFileSync(join(cwd, ".pi", "design", name), text);
+        mkdirSync(join(cwd, ".pi-pocket", "design", name, ".."), { recursive: true });
+        writeFileSync(join(cwd, ".pi-pocket", "design", name), text);
     }
 
     return cwd;
@@ -36,23 +36,26 @@ test("a kept system is the same object until a file changes; each kind of edit s
     const edits: [string, (cwd: string) => void, (cwd: string) => void][] = [
         [
             "a same-size edit of tokens.json",
-            (cwd) => writeFileSync(join(cwd, ".pi/design/tokens.json"), tokens("#999999")),
+            (cwd) => writeFileSync(join(cwd, ".pi-pocket/design/tokens.json"), tokens("#999999")),
             (cwd) => assert.equal(accent(cwd), "#999999"),
         ],
         [
             "a mode file added",
-            (cwd) => writeFileSync(join(cwd, ".pi/design/tokens.dim.json"), mode("#333333")),
+            (cwd) => writeFileSync(join(cwd, ".pi-pocket/design/tokens.dim.json"), mode("#333333")),
             (cwd) => assert.equal(accent(cwd, "dim"), "#333333"),
         ],
         [
             "a mode file removed",
-            (cwd) => rmSync(join(cwd, ".pi/design/tokens.dark.json")),
+            (cwd) => rmSync(join(cwd, ".pi-pocket/design/tokens.dark.json")),
             (cwd) => assert.deepEqual(loadDesignSystem(cwd)!.modes, ["light"]),
         ],
         [
             "a component added",
             (cwd) =>
-                writeFileSync(join(cwd, ".pi/design/components/badge.html"), COMPONENT("Badge")),
+                writeFileSync(
+                    join(cwd, ".pi-pocket/design/components/badge.html"),
+                    COMPONENT("Badge"),
+                ),
             (cwd) =>
                 assert.deepEqual(
                     loadDesignSystem(cwd)!.components.map((each) => each.slug),
@@ -61,7 +64,7 @@ test("a kept system is the same object until a file changes; each kind of edit s
         ],
         [
             "a component removed",
-            (cwd) => rmSync(join(cwd, ".pi/design/components/card.html")),
+            (cwd) => rmSync(join(cwd, ".pi-pocket/design/components/card.html")),
             (cwd) => assert.deepEqual(loadDesignSystem(cwd)!.components, []),
         ],
     ];
@@ -92,7 +95,7 @@ test("an edit shows at once: a file changed in the last 3 seconds is read again 
     try {
         assert.notEqual(loadDesignSystem(cwd), loadDesignSystem(cwd));
         assert.equal(accent(cwd), "#111111");
-        writeFileSync(join(cwd, ".pi/design/tokens.json"), tokens("#999999"));
+        writeFileSync(join(cwd, ".pi-pocket/design/tokens.json"), tokens("#999999"));
         assert.equal(accent(cwd), "#999999");
     } finally {
         rmSync(cwd, { recursive: true, force: true });

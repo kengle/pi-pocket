@@ -1,7 +1,6 @@
 /** Paths as people write them (`~/project`) and as activity lines show them, and where Pi and a project keep theirs. */
 import { homedir } from "node:os";
 import { join, relative, sep } from "node:path";
-import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import { dataDir } from "./config.ts";
 
 /** Pi's folder for this process: `PI_CODING_AGENT_DIR`, else `<data>/agent` (`main.ts` sets it before any read). */
@@ -13,9 +12,9 @@ export function agentDir(): string {
         : expandHome(named.trim());
 }
 
-/** The folder a project keeps Pi's files in, as Pi's own constant gives it: `.pi`. */
+/** The folder a project keeps Pi Pocket's files in: `.pi-pocket`, never Pi's own `.pi`. */
 export function projectDirName(): string {
-    return CONFIG_DIR_NAME;
+    return ".pi-pocket";
 }
 
 /** The project's own folder for Pi: `<cwd>/.pi`. */
@@ -48,7 +47,7 @@ export function homeSkillsDir(home: string): string {
     return join(home, ".agents", "skills");
 }
 
-/** The project's design system: `<cwd>/.pi/design`. */
+/** The project's design system: `<cwd>/.pi-pocket/design`. */
 export function designDir(cwd: string): string {
     return join(projectDir(cwd), "design");
 }

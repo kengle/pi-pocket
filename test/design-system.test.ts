@@ -73,16 +73,16 @@ test("a read with no file explains that it is absent, and names what a design sy
     const dir = folder();
     const reply = await text(run(dir, { action: "read" }));
 
-    assert.match(reply, /no \.pi\/design-system\.md/);
+    assert.match(reply, /no \.pi-pocket\/design-system\.md/);
     assert.match(reply, /tokens/);
 });
 
-test("a write puts the file at .pi/design-system.md, and a read gives the text back", async () => {
+test("a write puts the file at .pi-pocket/design-system.md, and a read gives the text back", async () => {
     const dir = folder();
 
     assert.match(
         await text(run(dir, { action: "write", content: "# Design system\n\nHello.\n" })),
-        /Wrote \.pi\/design-system\.md/,
+        /Wrote \.pi-pocket\/design-system\.md/,
     );
     assert.equal(readFileSync(join(dir, SYSTEM_FILE), "utf8"), "# Design system\n\nHello.\n");
 
@@ -103,7 +103,7 @@ test("write needs content, and too much content is refused with the file left al
 
     assert.throws(() => lstatSync(join(dir, SYSTEM_FILE)), "the refusal left no file");
     assert.deepEqual(
-        readdirSync(join(dir, ".pi"), { recursive: true }),
+        readdirSync(join(dir, ".pi-pocket"), { recursive: true }),
         [],
         "nor any temporary file",
     );
@@ -115,7 +115,11 @@ test("an empty write is fine, leaves no temporary file, and reads as an empty de
     await text(run(dir, { action: "write", content: "" }));
 
     assert.deepEqual(readDesignSystemText(dir), { text: "", truncated: false });
-    assert.deepEqual(readdirSync(join(dir, ".pi")), ["design-system.md"], "only the file is there");
+    assert.deepEqual(
+        readdirSync(join(dir, ".pi-pocket")),
+        ["design-system.md"],
+        "only the file is there",
+    );
 });
 
 test("a read past the limit is cut before a character's middle, not after", async () => {

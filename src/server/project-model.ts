@@ -42,7 +42,10 @@ export function projectModelDefault(cwd: string, settings: SettingsManager, mode
     }
 
     const fail = (detail: string): never => {
-        throw new HttpError(400, `Project .pi/settings.json: ${detail} No session was created.`);
+        throw new HttpError(
+            400,
+            `Project .pi-pocket/settings.json: ${detail} No session was created.`,
+        );
     };
 
     let text: string;

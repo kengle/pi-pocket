@@ -14,7 +14,7 @@ test("design-system reads and writes refuse a linked .pi parent", () => {
         const path = join(outside, "design-system.md");
 
         writeFileSync(path, "outside");
-        symlinkSync(outside, join(root, ".pi"));
+        symlinkSync(outside, join(root, ".pi-pocket"));
         assert.throws(() => readDesignSystemText(root), /symlink/);
         assert.throws(() => writeDesignSystemText(root, "changed"), /symlink/);
         assert.equal(readFileSync(path, "utf8"), "outside");
@@ -31,8 +31,8 @@ test(
         const root = mkdtempSync(join(tmpdir(), "design-system-fifo-"));
 
         try {
-            mkdirSync(join(root, ".pi"));
-            execFileSync("mkfifo", [join(root, ".pi", "design-system.md")]);
+            mkdirSync(join(root, ".pi-pocket"));
+            execFileSync("mkfifo", [join(root, ".pi-pocket", "design-system.md")]);
             assert.throws(() => readDesignSystemText(root), /regular file/);
         } finally {
             rmSync(root, { recursive: true, force: true });

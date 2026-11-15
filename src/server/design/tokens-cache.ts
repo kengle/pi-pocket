@@ -35,7 +35,7 @@ function statOf(path: string) {
     }
 }
 
-/** The revision of `.pi/design` as the read sees it, or undefined when it cannot be trusted (or there is no folder). */
+/** The revision of `.pi-pocket/design` as the read sees it, or undefined when it cannot be trusted (or there is no folder). */
 function folderRevision(cwd: string): string | undefined {
     const hash = createHash("sha256");
     const now = BigInt(Date.now()) * 1_000_000n;

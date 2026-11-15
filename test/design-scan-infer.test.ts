@@ -473,7 +473,7 @@ test("the scan reads dot folders for styles (Storybook, VitePress) but not cache
         project({
             ".storybook/preview.css": ":root { --bg: #111 }",
             ".cache/x.css": ":root { --cache: #222 }",
-            ".pi/design/dist/tokens.css": ":root { --generated: #333 }",
+            ".pi-pocket/design/dist/tokens.css": ":root { --generated: #333 }",
             "node_modules/pkg/a.css": ":root { --dep: #444 }",
         }),
     );

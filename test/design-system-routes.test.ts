@@ -45,9 +45,9 @@ before(async () => {
     const none = join(root, "no-system");
     const old = join(root, "old-system");
 
-    mkdirSync(join(old, ".pi"), { recursive: true });
+    mkdirSync(join(old, ".pi-pocket"), { recursive: true });
     mkdirSync(none, { recursive: true });
-    writeFileSync(join(old, ".pi", "design-system.md"), "# Old\n\nAccent #3b6cf6.\n");
+    writeFileSync(join(old, ".pi-pocket", "design-system.md"), "# Old\n\nAccent #3b6cf6.\n");
 
     session = await newSession(app, folder);
     bare = await newSession(app, none);
@@ -94,7 +94,7 @@ async function call(who: string, path: string, body?: unknown, id: ConversationI
 }
 
 const read = async (who = "owner", id = session) => (await call(who, "system", undefined, id)).data;
-const file = (...parts: string[]) => join(folder, ".pi", "design", ...parts);
+const file = (...parts: string[]) => join(folder, ".pi-pocket", "design", ...parts);
 const tokenOf = (data: Record<string, any>, name: string) =>
     data.system.tokens.find((each: { name: string }) => each.name === name);
 
@@ -138,8 +138,8 @@ test("the revision answers `unchanged`, and a project with no system says what i
     assert.ok(old.legacy > 10);
     const hidden = join(root, "linked");
 
-    mkdirSync(join(hidden, ".pi"), { recursive: true });
-    symlinkSync(join(folder, ".pi", "design"), join(hidden, ".pi", "design"));
+    mkdirSync(join(hidden, ".pi-pocket"), { recursive: true });
+    symlinkSync(join(folder, ".pi-pocket", "design"), join(hidden, ".pi-pocket", "design"));
 
     const linked = await newSession(app, hidden);
 
@@ -743,7 +743,7 @@ test("a system with an error is not published or exported, and a revision is a s
     mkdirSync(broken, { recursive: true });
     writeSystemFixture(broken);
     writeFileSync(
-        join(broken, ".pi", "design", "tokens.dark.json"),
+        join(broken, ".pi-pocket", "design", "tokens.dark.json"),
         JSON.stringify({ color: { accent: { hover: { $value: "{color.missing}" } } } }),
     );
 

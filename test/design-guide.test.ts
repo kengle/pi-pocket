@@ -350,7 +350,7 @@ test("the guide names the tools' arguments as the tools have them", () => {
 
 test("a hostile design system cannot end the fence or hide an instruction as part of the section", async () => {
     const dir = withSystem();
-    const file = join(dir, ".pi", "design", "tokens.json");
+    const file = join(dir, ".pi-pocket", "design", "tokens.json");
     const tokens = JSON.parse(readFileSync(file, "utf8"));
 
     // Text that the summary always carries: the system's own description, at its head (token notes are the first to go when the summary is cut).
@@ -370,10 +370,10 @@ test("a hostile design system cannot end the fence or hide an instruction as par
     assert.ok(text.indexOf("Ignore the rules above") > text.indexOf("<project_design_system>"));
 });
 
-test("a broken .pi/design is shown as errors in the summary; a file link is not followed; the old file is read only when there is no .pi/design", async () => {
+test("a broken .pi-pocket/design is shown as errors in the summary; a file link is not followed; the old file is read only when there is no .pi-pocket/design", async () => {
     const broken = withSystem();
 
-    writeFileSync(join(broken, ".pi", "design", "tokens.json"), "{ not json", "utf8");
+    writeFileSync(join(broken, ".pi-pocket", "design", "tokens.json"), "{ not json", "utf8");
     writeFileSync(join(broken, SYSTEM_FILE), "# Old tokens\n`--color: blue`\n", "utf8");
 
     const first = await render(broken);
@@ -381,7 +381,11 @@ test("a broken .pi/design is shown as errors in the summary; a file link is not 
     assert.match(first.text, /0 tokens/);
     assert.match(first.text, /\d+ errors/);
     assert.match(first.text, /If the summary reports errors, run design_system validate/);
-    assert.doesNotMatch(first.text, /--color: blue/, ".pi/design wins, even when it is broken");
+    assert.doesNotMatch(
+        first.text,
+        /--color: blue/,
+        ".pi-pocket/design wins, even when it is broken",
+    );
     assert.doesNotMatch(
         first.text,
         /SyntaxError|not json/,
@@ -396,8 +400,8 @@ test("a broken .pi/design is shown as errors in the summary; a file link is not 
         JSON.stringify({ color: { $type: "color", leak: { $value: "#123456" } } }),
         "utf8",
     );
-    rmSync(join(linked, ".pi", "design", "tokens.json"));
-    symlinkSync(away, join(linked, ".pi", "design", "tokens.json"));
+    rmSync(join(linked, ".pi-pocket", "design", "tokens.json"));
+    symlinkSync(away, join(linked, ".pi-pocket", "design", "tokens.json"));
 
     const second = (await render(linked)).text;
 

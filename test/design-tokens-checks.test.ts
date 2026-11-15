@@ -245,7 +245,7 @@ const run = (dir: string, args: Record<string, unknown>) =>
 
 test("mode files past twice the mode limit are not read", () => {
     const dir = project();
-    const folder = join(dir, ".pi", "design");
+    const folder = join(dir, ".pi-pocket", "design");
 
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, "tokens.json"), "{}");
@@ -309,7 +309,10 @@ test("the 0.26 write still works and is not in the description", async () => {
         content: '# Tokens\n```json\n{"color":{"accent":"#fff"}}\n```\n',
     });
 
-    assert.match((reply.output as { text: string }[])[0]!.text, /Wrote \.pi\/design-system\.md/);
+    assert.match(
+        (reply.output as { text: string }[])[0]!.text,
+        /Wrote \.pi-pocket\/design-system\.md/,
+    );
     assert.equal(loadDesignSystem(dir), undefined);
 });
 
