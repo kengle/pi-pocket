@@ -12,7 +12,8 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { CONFIG_DIR_NAME, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { promptsSubdir } from "./paths.ts";
 import { expandHome } from "./paths.ts";
 
 export type PromptTemplate = {
@@ -99,7 +100,7 @@ export function loadPromptTemplates(
 ): PromptTemplate[] {
     const found = [
         ...templatesIn(join(agentDir, "prompts")),
-        ...(project ? templatesIn(resolve(cwd, CONFIG_DIR_NAME, "prompts")) : []),
+        ...(project ? templatesIn(promptsSubdir(cwd)) : []),
     ];
 
     for (const raw of paths) {

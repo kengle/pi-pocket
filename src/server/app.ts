@@ -11,7 +11,6 @@ import { isAbsolute, join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { clampThinkingLevel, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import {
-    getAgentDir,
     ModelRuntime,
     resolveModelScopeWithDiagnostics,
     type ProviderConfig,
@@ -103,7 +102,7 @@ import { serverBuild } from "./build.ts";
 import { presentedBuild } from "./entry-presentation.ts";
 import { compactionReader } from "./compaction.ts";
 import { configureHttp } from "./net.ts";
-import { expandHome, workspaceScheme } from "./paths.ts";
+import { agentDir, expandHome, workspaceScheme } from "./paths.ts";
 import { createPublicFetch } from "./public-fetch.ts";
 import { PiSessions } from "./pi-sessions.ts";
 import { Hooks } from "./hooks.ts";
@@ -867,7 +866,7 @@ export class PocketApp {
         const host: PocketHost = {
             guard: this.guard,
             approvals: this.approvals,
-            agentDir: getAgentDir(),
+            agentDir: agentDir(),
             dataDir: this.dataDir,
             pocketVersion: pocketVersion(),
             modelInfo: (spec) => modelInfo(this.models, spec),
@@ -3500,7 +3499,7 @@ export class PocketApp {
             // Unreadable settings: the default folders still count, and no project is trusted unasked.
         }
 
-        return { agentDir: getAgentDir(), home: this.#home, settingsPaths, defaultProjectTrust };
+        return { agentDir: agentDir(), home: this.#home, settingsPaths, defaultProjectTrust };
     }
 
     /** Pi's skills for a session working in `cwd`, from the places Pi looks (`skills.ts`). */
@@ -3546,7 +3545,7 @@ export class PocketApp {
             throw new HttpError(400, "This folder has no folder above it.");
         }
 
-        saveProjectTrust(this.cwdOf(id), getAgentDir(), choice);
+        saveProjectTrust(this.cwdOf(id), agentDir(), choice);
 
         return this.projectTrust(id, user);
     }
@@ -3581,14 +3580,14 @@ export class PocketApp {
         if (this.workspaceScheme(cwd) !== undefined) {
             return loadPromptTemplates(
                 this.#home,
-                getAgentDir(),
+                agentDir(),
                 paths.filter((path) => isAbsolute(expandHome(path.trim()))),
                 { project: false },
             );
         }
 
         // A project told "Don't trust" offers none of its own, as its .pi/skills.
-        return loadPromptTemplates(cwd, getAgentDir(), paths, {
+        return loadPromptTemplates(cwd, agentDir(), paths, {
             project: !projectDistrusted(cwd, this.#skillSources()),
         });
     }

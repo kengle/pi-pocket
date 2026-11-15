@@ -14,7 +14,7 @@ import { MAX_INSTRUCTIONS } from "./commands.ts";
 import { describe, HttpError } from "./errors.ts";
 import { quoted } from "./fence.ts";
 import { isThinkingLevel, THINKING_LEVELS } from "./models.ts";
-import { displayPath, homePath } from "./paths.ts";
+import { displayPath, homePath, skillsSubdir } from "./paths.ts";
 
 /**
  * A bot as its file says it: what Pi is told in every request of the session, the skills its folder gets, and the model
@@ -220,7 +220,7 @@ function conflict(name: string, target: string, cwd: string): HttpError {
  */
 export function checkSkills(dataDir: string, cwd: string, skills: readonly string[]): void {
     for (const name of skills) {
-        const target = join(cwd, ".pi", "skills", name);
+        const target = join(skillsSubdir(cwd), name);
 
         if (
             existsSync(target) &&
@@ -245,7 +245,7 @@ export function installSkills(dataDir: string, cwd: string, skills: readonly str
 
     for (const name of skills) {
         const source = join(pool, name);
-        const target = join(cwd, ".pi", "skills", name);
+        const target = join(skillsSubdir(cwd), name);
         const there = existsSync(target);
 
         if (there && sameFolder(source, target)) {

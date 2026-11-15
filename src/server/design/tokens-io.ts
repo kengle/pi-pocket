@@ -17,10 +17,11 @@ import {
 } from "node:fs";
 import { basename, join } from "node:path";
 import type { SystemProblem } from "./system-types.ts";
+import { projectDir, projectDirName } from "../paths.ts";
 import { LIMITS, boundedText, type RawSystem } from "./tokens-base.ts";
 import { forgetSystem } from "./tokens-cache.ts";
 
-export const DESIGN_DIR = join(".pi", "design");
+export const DESIGN_DIR = join(projectDirName(), "design");
 
 /** The system as it is on disk, with the files that could not be parsed: a write must not replace them by accident. */
 export interface Folder {
@@ -64,7 +65,7 @@ function lstatOf(path: string): ReturnType<typeof lstatSync> | undefined {
 }
 
 function hasDesignFolder(cwd: string): boolean {
-    const pi = kindOf(join(cwd, ".pi"), "The project's .pi folder");
+    const pi = kindOf(projectDir(cwd), "The project's .pi folder");
 
     if (pi === undefined) {
         return false;
@@ -349,7 +350,7 @@ export function writeFiles(cwd: string, files: Map<string, string | null>): Writ
     const result: WriteResult = { written: [], removed: [] };
 
     forgetSystem(cwd);
-    ensureFolder(join(cwd, ".pi"), "The project's .pi folder");
+    ensureFolder(projectDir(cwd), "The project's .pi folder");
     ensureFolder(join(cwd, DESIGN_DIR), ".pi/design");
 
     const root = join(cwd, DESIGN_DIR);

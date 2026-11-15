@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { arr, bool, obj, opt, str, union, unknown } from "@earendil-works/pi-schema";
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
+import { projectDir, projectDirName } from "../paths.ts";
 import { TOKEN_TYPES, boundedText } from "./tokens-base.ts";
 import { checkTokensBlock, scanProject, scanReport, scanRoot } from "./scan.ts";
 import type { Draft } from "./scan-scales.ts";
@@ -43,7 +44,7 @@ import { literal, record } from "../tool-schema.ts";
 export { boundedText, utf8Cut } from "./tokens-base.ts";
 
 /** The file's path, in the session's working directory. */
-export const SYSTEM_FILE = join(".pi", "design-system.md");
+export const SYSTEM_FILE = join(projectDirName(), "design-system.md");
 
 /** The file's size limit, in bytes: tokens and rules stay short enough to sit in a prompt. */
 export const MAX_BYTES = 16_384;
@@ -52,7 +53,7 @@ const file = (cwd: string) => join(cwd, SYSTEM_FILE);
 
 function systemDirectory(cwd: string): boolean {
     try {
-        const info = lstatSync(join(cwd, ".pi"));
+        const info = lstatSync(projectDir(cwd));
 
         if (!info.isDirectory() || info.isSymbolicLink()) {
             throw new Error("The project's .pi folder must be a directory, not a symlink.");
@@ -138,12 +139,12 @@ export function writeDesignSystemText(cwd: string, content: string): number {
     }
 
     if (!systemDirectory(cwd)) {
-        mkdirSync(join(cwd, ".pi"), { recursive: true });
+        mkdirSync(projectDir(cwd), { recursive: true });
     }
 
     systemDirectory(cwd);
     // A fresh name each time: only this write's temporary file, and none of an earlier one under the same name.
-    const temp = join(cwd, ".pi", `.${randomUUID()}.tmp`);
+    const temp = join(projectDir(cwd), `.${randomUUID()}.tmp`);
 
     try {
         writeFileSync(temp, bytes, { flag: "wx" });

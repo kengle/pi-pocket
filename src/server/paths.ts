@@ -1,6 +1,67 @@
-/** Paths as people write them (`~/project`) and as activity lines show them. */
+/** Paths as people write them (`~/project`) and as activity lines show them, and where Pi and a project keep theirs. */
 import { homedir } from "node:os";
 import { join, relative, sep } from "node:path";
+import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
+
+/** Pi's own folder (`~/.pi/agent`, or `PI_CODING_AGENT_DIR`): its settings, trust, skills, prompts, and sessions. */
+export function agentDir(): string {
+    return getAgentDir();
+}
+
+/** The folder a project keeps Pi's files in, as Pi's own constant gives it: `.pi`. */
+export function projectDirName(): string {
+    return CONFIG_DIR_NAME;
+}
+
+/** The project's own folder for Pi: `<cwd>/.pi`. */
+export function projectDir(cwd: string): string {
+    return join(cwd, projectDirName());
+}
+
+/** The project's skills: `<cwd>/.pi/skills`. */
+export function skillsSubdir(cwd: string): string {
+    return join(projectDir(cwd), "skills");
+}
+
+/** The project's prompt templates: `<cwd>/.pi/prompts`. */
+export function promptsSubdir(cwd: string): string {
+    return join(projectDir(cwd), "prompts");
+}
+
+/** A project's own Pi settings: `<cwd>/.pi/settings.json`. */
+export function projectSettingsFile(cwd: string): string {
+    return join(projectDir(cwd), "settings.json");
+}
+
+/** Pi's skills for every project: `<agentDir>/skills`. */
+export function userSkillsDir(agent: string): string {
+    return join(agent, "skills");
+}
+
+/** The home folder's skills, for every project: `~/.agents/skills`. */
+export function homeSkillsDir(home: string): string {
+    return join(home, ".agents", "skills");
+}
+
+/** The project's design system: `<cwd>/.pi/design`. */
+export function designDir(cwd: string): string {
+    return join(projectDir(cwd), "design");
+}
+
+/** Pi's MCP servers, as Pi's own app reads them: `<agentDir>/mcp.json`. */
+export function mcpConfigPath(): string {
+    return join(agentDir(), "mcp.json");
+}
+
+/** Pi's trust store: `<agentDir>/trust.json`. */
+export function trustFile(): string {
+    return join(agentDir(), "trust.json");
+}
+
+/** Lancet Guard's settings, which Pi's own app keeps outside its folder: `~/.pi/lancet-guard.json`. */
+export function lancetFile(): string {
+    return join(homedir(), ".pi", "lancet-guard.json");
+}
 
 /** `~` and `~/x` to absolute paths; anything else unchanged. */
 export function expandHome(path: string): string {

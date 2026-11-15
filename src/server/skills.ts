@@ -33,12 +33,18 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
-    CONFIG_DIR_NAME,
     loadSkills,
     loadSkillsFromDir,
     ProjectTrustStore,
     type Skill,
 } from "@earendil-works/pi-coding-agent";
+import {
+    homeSkillsDir,
+    projectSettingsFile,
+    promptsSubdir,
+    skillsSubdir,
+    userSkillsDir,
+} from "./paths.ts";
 import { minimatch } from "minimatch";
 
 /** What, besides the session's folder, says where skills are. */
@@ -228,7 +234,7 @@ export function projectDistrusted(cwd: string, sources: SkillSources): boolean {
     const folder = resolve(cwd);
 
     return (
-        existsSync(join(folder, CONFIG_DIR_NAME, "prompts")) &&
+        existsSync(promptsSubdir(folder)) &&
         decides(savedDecision(folder, sources.agentDir), sources) === "distrusted"
     );
 }
@@ -236,7 +242,7 @@ export function projectDistrusted(cwd: string, sources: SkillSources): boolean {
 /** Where a session in `cwd` loads skills from, in order: the project's folders, then skill files Pi's settings leave on. */
 export function skillPlaces(cwd: string, sources: SkillSources): string[] {
     const folder = resolve(cwd);
-    const own = join(folder, CONFIG_DIR_NAME, "skills");
+    const own = skillsSubdir(folder);
     const hasOwn = existsSync(own);
     const agents = projectAgentsFolders(folder, sources.home);
     // The trust store is read only for a project with skills of its own: Pi needs no trust from one without.
@@ -246,8 +252,8 @@ export function skillPlaces(cwd: string, sources: SkillSources): string[] {
             : "undecided";
     // Pi's folder and the home folder's `.agents` are the base of the exclusions for the skills in each.
     const user: [string, string][] = [
-        [join(sources.agentDir, "skills"), sources.agentDir],
-        [join(sources.home, ".agents", "skills"), join(sources.home, ".agents")],
+        [userSkillsDir(sources.agentDir), sources.agentDir],
+        [homeSkillsDir(sources.home), join(sources.home, ".agents")],
     ];
     const entries = [...sources.settingsPaths];
     const paths = entries.filter((each) => !isPattern(each));
@@ -293,7 +299,7 @@ export function readProjectTrust(cwd: string, sources: SkillSources): ProjectTru
     const parent = dirname(folder);
     const saved = savedDecision(cwd, sources.agentDir);
     const folders = projectAgentsFolders(resolve(cwd), sources.home);
-    const own = join(resolve(cwd), CONFIG_DIR_NAME, "skills");
+    const own = skillsSubdir(resolve(cwd));
     const skillsIn = (paths: string[]) =>
         paths.length === 0
             ? []
@@ -305,7 +311,7 @@ export function readProjectTrust(cwd: string, sources: SkillSources): ProjectTru
               }).skills.map(({ name, description }) => ({ name, description }));
     const skills = skillsIn(folders);
     const ownSkills = skillsIn(existsSync(own) ? [own] : []);
-    const settings = existsSync(join(folder, CONFIG_DIR_NAME, "settings.json"));
+    const settings = existsSync(projectSettingsFile(folder));
 
     return {
         folder,

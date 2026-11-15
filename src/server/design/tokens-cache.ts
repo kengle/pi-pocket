@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { designDir, projectDir, projectDirName } from "../paths.ts";
 import { LIMITS } from "./tokens-base.ts";
 import type { DesignSystem } from "./system-types.ts";
 
@@ -60,9 +61,9 @@ function folderRevision(cwd: string): string | undefined {
         return stat.isDirectory();
     };
 
-    const root = join(cwd, ".pi", "design");
+    const root = designDir(cwd);
 
-    if (!add(".pi", join(cwd, ".pi"), true) || !add("design", root, true)) {
+    if (!add(projectDirName(), projectDir(cwd), true) || !add("design", root, true)) {
         return undefined;
     }
 

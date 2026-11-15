@@ -7,10 +7,9 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentDir, lancetFile } from "./paths.ts";
 import { createJiti } from "jiti";
 import { describe } from "./errors.ts";
 
@@ -80,7 +79,7 @@ const FILE_TOOLS = new Set(["write", "edit"]);
 
 export class LancetGuard {
     readonly directory: string | undefined;
-    readonly settingsFile = join(homedir(), ".pi", "lancet-guard.json");
+    readonly settingsFile = lancetFile();
     #modules: Promise<LancetModules> | undefined;
     #loadError: string | undefined;
     #store: Promise<ModelStore> | undefined;
@@ -96,9 +95,9 @@ export class LancetGuard {
     constructor() {
         const candidates = [
             process.env.PI_POCKET_LANCET_DIR,
-            join(getAgentDir(), "npm", "node_modules", "specpi-lancet-guard"),
+            join(agentDir(), "npm", "node_modules", "specpi-lancet-guard"),
             join(
-                getAgentDir(),
+                agentDir(),
                 "git",
                 "github.com",
                 "TannerMidd",

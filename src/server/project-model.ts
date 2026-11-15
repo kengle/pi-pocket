@@ -1,19 +1,18 @@
 /** Trusted project model defaults for new sessions only; resource paths and run policy stay app-wide. */
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { clampThinkingLevel, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import {
-    getAgentDir,
     type ModelRuntime,
     ProjectTrustStore,
     SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { HttpError } from "./errors.ts";
+import { agentDir, projectSettingsFile } from "./paths.ts";
 import { isThinkingLevel } from "./models.ts";
 
 /** Fresh global defaults and trust policy for this creation only. Never reload or replace the shared app reader. */
 export function globalModelSettings(cwd: string): SettingsManager {
-    const settings = SettingsManager.create(cwd, getAgentDir(), { projectTrusted: false });
+    const settings = SettingsManager.create(cwd, agentDir(), { projectTrusted: false });
 
     if (settings.drainErrors().length > 0) {
         throw new HttpError(
@@ -28,7 +27,7 @@ export function globalModelSettings(cwd: string): SettingsManager {
 /** No project setting, including defaultProjectTrust, can grant trust to itself. Unreadable trust fails closed. */
 export function projectModelTrusted(cwd: string, settings: SettingsManager): boolean {
     try {
-        const saved = new ProjectTrustStore(getAgentDir()).getEntry(cwd);
+        const saved = new ProjectTrustStore(agentDir()).getEntry(cwd);
 
         return saved?.decision ?? settings.getDefaultProjectTrust() === "always";
     } catch {
@@ -49,7 +48,7 @@ export function projectModelDefault(cwd: string, settings: SettingsManager, mode
     let text: string;
 
     try {
-        text = readFileSync(join(cwd, ".pi", "settings.json"), "utf8");
+        text = readFileSync(projectSettingsFile(cwd), "utf8");
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
             return undefined;

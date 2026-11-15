@@ -20,7 +20,8 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
-import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { agentDir } from "./paths.ts";
 import type { PocketApp } from "./app.ts";
 import { describe, HttpError } from "./errors.ts";
 import { MODELS_JSON_REFUSED } from "./model-refresh.ts";
@@ -64,7 +65,7 @@ type Json = Record<string, unknown>;
 
 /** Pi's `models.json`, as `ModelRuntime.create()` finds it. */
 function modelsPath(): string {
-    return join(getAgentDir(), "models.json");
+    return join(agentDir(), "models.json");
 }
 
 function text(value: unknown, name: string, max: number): string {

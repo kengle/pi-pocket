@@ -6,7 +6,7 @@
  */
 import { lstatSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentDir } from "./paths.ts";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { PocketApp } from "./app.ts";
 import {
@@ -344,7 +344,7 @@ export class Workspace {
         const data = real(this.#app.dataDir);
 
         if (
-            inside(real(getAgentDir())) ||
+            inside(real(agentDir())) ||
             (inside(data) &&
                 !inside(join(data, "uploads")) &&
                 !inside(join(data, "worktrees")) &&

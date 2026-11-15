@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import type { ConversationId, Tx } from "@earendil-works/pi-durable";
+import { projectDir } from "../../paths.ts";
 import { readBundle } from "../../design/bundle.ts";
 import { localFolder, REMOTE_DESIGN, writeExport } from "../../design/files.ts";
 import { applyExactFixes } from "../../design/fix.ts";
@@ -501,8 +502,8 @@ function cleanFinding(each: CheckFinding): CheckFinding | undefined {
 function legacySize(cwd: string): number | null {
     try {
         // Links are refused: only a plain folder and file count.
-        const info = lstatSync(join(cwd, ".pi")).isDirectory()
-            ? lstatSync(join(cwd, ".pi", "design-system.md"))
+        const info = lstatSync(projectDir(cwd)).isDirectory()
+            ? lstatSync(join(projectDir(cwd), "design-system.md"))
             : undefined;
 
         return info?.isFile() ? info.size : null;
