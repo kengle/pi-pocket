@@ -3,7 +3,7 @@
  *
  * Pi Pocket runs its tools outside Pi, so Pi's extensions do not see them. This module loads the gate, rules, and
  * classifier of the installed `specpi-lancet-guard` package and exposes one `judge()` call. The guard's own settings
- * file (`~/.pi/lancet-guard.json`) decides whether it is on, exactly as it does inside Pi.
+ * file (`lancet-guard.json` in the data folder) decides whether it is on, as Pi's own file does inside Pi.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";

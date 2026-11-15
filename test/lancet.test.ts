@@ -16,8 +16,10 @@ process.env.HOME = join(root, "home");
 // Windows finds the home folder through USERPROFILE.
 process.env.USERPROFILE = join(root, "home");
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+// The data folder holds the guard's settings, and an inherited PI_POCKET_DIR would point at the real one.
+process.env.PI_POCKET_DIR = join(root, "pocket");
 delete process.env.PI_POCKET_GUARD;
-mkdirSync(join(root, "home", ".pi"), { recursive: true });
+mkdirSync(join(root, "pocket"), { recursive: true });
 
 const { LancetGuard } = await import("../src/server/lancet.ts");
 
@@ -25,7 +27,7 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 test("a guard that cannot load stays out of the way while off, and blocks while on", async () => {
     const lancet = new LancetGuard();
-    const settings = join(root, "home", ".pi", "lancet-guard.json");
+    const settings = join(root, "pocket", "lancet-guard.json");
 
     // No settings file: off, as the guard's own default.
     assert.equal(await lancet.judge("bash", { command: "ls" }, root), undefined);

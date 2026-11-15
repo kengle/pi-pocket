@@ -62,9 +62,9 @@ export function trustFile(): string {
     return join(agentDir(), "trust.json");
 }
 
-/** Lancet Guard's settings, which Pi's own app keeps outside its folder: `~/.pi/lancet-guard.json`. */
+/** Lancet Guard's settings, in the data folder: `<data>/lancet-guard.json`, copied once from Pi's `~/.pi`. */
 export function lancetFile(): string {
-    return join(homedir(), ".pi", "lancet-guard.json");
+    return join(dataDir(), "lancet-guard.json");
 }
 
 /** `~` and `~/x` to absolute paths; anything else unchanged. */

@@ -9,14 +9,17 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { homePath, projectDirName } from "./paths.ts";
+import { homePath, lancetFile } from "./paths.ts";
 
 /** The files Pi's app keeps that a move carries: its sign-ins and choices, never its sessions. */
 const CARRIED = ["auth.json", "models.json", "settings.json", "trust.json"];
 
-/** Where Pi's app kept them before this process moved: `~/.pi/agent`, built from the one name that says `.pi`. */
-function oldAgentDir(): string {
-    return join(homedir(), projectDirName(), "agent");
+/**
+ * Where Pi's app keeps its own folder: `~/.pi/agent`, Pi's, not a project's. A literal, because a project's name is
+ * `.pi-pocket` now and this is the one folder Pi Pocket reads there.
+ */
+function piAgentDir(): string {
+    return join(homedir(), ".pi", "agent");
 }
 
 /**
@@ -53,6 +56,30 @@ export function carryAgentFiles(from: string, into: string): string[] {
 }
 
 /**
+ * Carry Lancet Guard's settings from Pi's own folder into the data folder, once: the guard reads one file, and the
+ * owner should not have to make it again. The file in `~/.pi` stays as it was.
+ */
+export function carryLancetFile(): void {
+    const into = lancetFile();
+
+    if (existsSync(into)) {
+        return;
+    }
+
+    const from = join(homedir(), ".pi", "lancet-guard.json");
+
+    if (!existsSync(from)) {
+        return;
+    }
+
+    copyFileSync(from, into);
+    chmodSync(into, statSync(from).mode & 0o777);
+    console.log(
+        `Lancet Guard's settings copied to ${homePath(into)}; the file in ~/.pi stays as it was.`,
+    );
+}
+
+/**
  * Give this process Pi's folder at `dataDir()/agent`, unless the owner's environment already named one, and carry the
  * four files over on the first start. One line says what moved, where, and what stayed.
  */
@@ -61,11 +88,11 @@ export function usePocketAgentDir(data: string): void {
 
     process.env.PI_CODING_AGENT_DIR = chosen;
 
-    const copied = carryAgentFiles(oldAgentDir(), chosen);
+    const copied = carryAgentFiles(piAgentDir(), chosen);
 
     if (copied.length > 0) {
         console.log(
-            `Pi's ${copied.join(", ")} copied to ${homePath(chosen)}: the sign-ins and choices of Pi's terminal app, kept once. Its sessions stay in ${homePath(oldAgentDir())}.`,
+            `Pi's ${copied.join(", ")} copied to ${homePath(chosen)}: the sign-ins and choices of Pi's terminal app, kept once. Its sessions stay in ${homePath(piAgentDir())}.`,
         );
     }
 }

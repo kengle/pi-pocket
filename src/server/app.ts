@@ -813,7 +813,11 @@ export class PocketApp {
             this.#log(`Push notifications are off: ${describe(error)}`);
         }
 
-        this.settings = SettingsManager.create(this.defaultCwd);
+        // Pi's global settings only: a project's `.pi/settings.json` is Pi's own, and Pi Pocket reads a project's
+        // `.pi-pocket/settings.json` where it matters (`project-model.ts`), with trust.
+        this.settings = SettingsManager.create(this.defaultCwd, agentDir(), {
+            projectTrusted: false,
+        });
 
         try {
             configureHttp(
