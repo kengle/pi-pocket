@@ -1,11 +1,16 @@
 /** Paths as people write them (`~/project`) and as activity lines show them, and where Pi and a project keep theirs. */
 import { homedir } from "node:os";
 import { join, relative, sep } from "node:path";
-import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
+import { dataDir } from "./config.ts";
 
-/** Pi's own folder (`~/.pi/agent`, or `PI_CODING_AGENT_DIR`): its settings, trust, skills, prompts, and sessions. */
+/** Pi's folder for this process: `PI_CODING_AGENT_DIR`, else `<data>/agent` (`main.ts` sets it before any read). */
 export function agentDir(): string {
-    return getAgentDir();
+    const named = process.env.PI_CODING_AGENT_DIR;
+
+    return named === undefined || named.trim() === ""
+        ? join(dataDir(), "agent")
+        : expandHome(named.trim());
 }
 
 /** The folder a project keeps Pi's files in, as Pi's own constant gives it: `.pi`. */

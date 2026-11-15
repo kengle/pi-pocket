@@ -13,6 +13,7 @@ import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
 // Only types from the app here: its modules load below, after the signal handlers (loading takes a moment).
 import type { AccessInfo, PocketApp } from "./app.ts";
+import { usePocketAgentDir } from "./agent-dir.ts";
 import { APP_ROOT, dataDir } from "./config.ts";
 import type { createHandler } from "./http.ts";
 import { restoreMissingNpmPackage } from "./update-state.ts";
@@ -91,6 +92,8 @@ function parseArgs(argv: string[]) {
 const options = parseArgs(process.argv.slice(2));
 
 process.env.PI_POCKET_DIR = options.data;
+// Pi's folder for this process, and the first copy of Pi's sign-ins and choices into it: before anything reads it.
+usePocketAgentDir(options.data);
 // The data folder holds the database, sign-in tokens, push keys, and uploads: only this user may open it, also when
 // --data named a folder that already existed.
 mkdirSync(options.data, { recursive: true, mode: 0o700 });
