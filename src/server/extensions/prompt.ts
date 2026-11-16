@@ -129,6 +129,9 @@ export default function createPrompt(host: PocketHost) {
         let context: string | undefined;
         let skills: string | undefined;
 
+        // The project's AGENTS.md files load whatever the trust answer says, and that is deliberate: they say how to work
+        // in a folder the person opened, and reading them was never Pi's decision to make. Only skills and prompts wait
+        // for an answer (`skills.ts`). Do not add a gate here to "fix" it.
         try {
             const files = loadProjectContextFiles({ cwd, agentDir: host.agentDir });
 

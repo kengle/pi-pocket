@@ -5,10 +5,10 @@
  * Pi's own folder and the home folder keep no skills that a session loads: a project's skills are the project's, and a
  * skill for every project lives in the home folder's project, if its person put one there.
  *
- * A project offers its skills only when Pi was told to trust it: its trust store (`trust.json` in Pi's folder) says
- * so for the folder or one above it, or says nothing and Pi's `defaultProjectTrust` setting is "always". No decision,
- * or a "no", keeps them out. Pi Pocket asks its owner (`readProjectTrust` says when) and saves the answer in the same
- * store, with the three answers Pi's `/trust` saves (`saveProjectTrust`).
+ * A project's skills load by default: this is one person's own machine, and a gate on every project costs more than it
+ * keeps out. Only a "no" keeps them out, saved in Pi's trust store (`trust.json` in Pi's folder) for the folder or one
+ * above it, or Pi's `defaultProjectTrust` setting "never". Pi Pocket offers the answer back (`readProjectTrust` says
+ * when) and saves it in the same store, with the three answers Pi's `/trust` saves (`saveProjectTrust`).
  */
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
@@ -80,6 +80,8 @@ export type ProjectTrust = {
     defaultProjectTrust: SkillSources["defaultProjectTrust"];
     /** Whether Pi trusts the project now. */
     trusted: boolean;
+    /** Whether Pi was told not to trust it (a saved "no", or `defaultProjectTrust` "never"): its skills stay off. */
+    distrusted: boolean;
     /** The project's `.pi-pocket/skills` folders, nearest first. */
     folders: string[];
     /** The skills in them. */
@@ -88,7 +90,7 @@ export type ProjectTrust = {
     ownSkills: { name: string; description: string }[];
     /** The project has a `.pi-pocket/settings.json` file, whose model defaults require trust. */
     settings: boolean;
-    /** Whether to ask the owner: project skills or settings exist, no decision applies, and Pi's setting is to ask. */
+    /** Whether to show the owner its answer: the project was told not to be trusted, and has skills or settings. */
     ask: boolean;
     /** Pi's trust store cannot be read: nothing is trusted, and no answer can be saved until it is mended. */
     unreadable?: true;
@@ -151,15 +153,16 @@ export function projectDistrusted(cwd: string, sources: SkillSources): boolean {
 }
 
 /**
- * Where a session in `cwd` loads skills from: its project's folders, nearest first, and only when Pi was told to trust
- * that project. A project with no decision, or a "no", offers none of its skills.
+ * Where a session in `cwd` loads skills from: its project's folders, nearest first, unless Pi was told not to trust that
+ * project. A project nobody decided about offers its skills: the answer is there for a project that should stay out, not
+ * as a gate every project passes through. Where the folders are is the rule below it, whatever the answer.
  */
 export function skillPlaces(cwd: string, sources: SkillSources): string[] {
     const folder = resolve(cwd);
 
-    return decides(savedDecision(folder, sources.agentDir), sources) === "trusted"
-        ? projectSkillFolders(folder)
-        : [];
+    return decides(savedDecision(folder, sources.agentDir), sources) === "distrusted"
+        ? []
+        : projectSkillFolders(folder);
 }
 
 /** Pi's skills for a session in `cwd`: the first of each name, from `skillPlaces`. */
@@ -196,22 +199,22 @@ export function readProjectTrust(cwd: string, sources: SkillSources): ProjectTru
         (each) => !nearer.has(each.name),
     );
     const settings = existsSync(projectSettingsFile(folder));
+    const decision = decides(saved, sources);
 
     return {
         folder,
         ...(parent === folder ? {} : { parent }),
         saved: saved ?? null,
         defaultProjectTrust: sources.defaultProjectTrust,
-        trusted: decides(saved, sources) === "trusted",
+        trusted: decision === "trusted",
+        distrusted: decision === "distrusted",
         folders,
         skills,
         ownSkills,
         settings,
-        // Empty skill folders do not ask, but a settings-only project does. An unreadable trust store cannot save.
-        ask:
-            (skills.length + ownSkills.length > 0 || settings) &&
-            saved === null &&
-            sources.defaultProjectTrust === "ask",
+        // Shown only for a project the owner said no to, and only when there is something of its own to say: a project
+        // nobody decided about loads its skills, so there is nothing to ask.
+        ask: (skills.length + ownSkills.length > 0 || settings) && saved != null && !saved.trusted,
         ...(saved === undefined ? { unreadable: true as const } : {}),
     };
 }

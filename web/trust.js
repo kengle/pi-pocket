@@ -117,7 +117,7 @@ async function decide(choice) {
     notify("info", `Trusted ${where}.${skills}${defaults}`);
 }
 
-/** Above the message box, for the owner: this project's skills or settings wait for a trust decision. */
+/** Above the message box, for the owner: this project was told not to be trusted, so its skills stay off. */
 export function TrustBar() {
     const { conversationId } = store.state;
     const cwd = store.state.view.agent?.cwd;
@@ -137,16 +137,20 @@ export function TrustBar() {
     // The count is the names, not the folders they came from: one skill in two folders is one skill.
     const waiting = skillNames([...info.ownSkills, ...info.skills]);
     const keep = waiting.length;
+    const what =
+        keep === 0
+            ? "Its settings stay off too."
+            : `Its ${String(keep)} skill${keep === 1 ? "" : "s"} stay off (${someNames(waiting)}).${info.settings ? " So do the model defaults in its .pi-pocket/settings.json." : ""}`;
 
     return html`<div class="trust-bar">
         <span class="grow">
-            <strong>Trust this project?</strong>${" "}${`This folder and the folders above it keep ${String(keep)} skill${keep === 1 ? "" : "s"} that stay off until you trust this project (${someNames(waiting)}).${info.settings ? " Its .pi-pocket/settings.json can also set the model and thinking level of later new sessions; this session will not change." : ""}`}
+            <strong>Not trusted.</strong>${" "}${`This folder was told not to be trusted. ${what}`}
         </span>
         <span class="trust-actions">
-            <button class="link small" onClick=${() => attempt(() => decide("distrust"))}>
-                Don't trust
+            <button class="button small primary" onClick=${() => attempt(() => decide("trust"))}>
+                Trust it
             </button>
-            <button class="button small primary" onClick=${() => openSheet({ type: "trust" })}>
+            <button class="link small" onClick=${() => openSheet({ type: "trust" })}>
                 Review
             </button>
             <button
@@ -175,19 +179,16 @@ function Choice({ label, detail, current, onClick }) {
 
 /** What the project's own skills do here, a sentence for each place they are in. */
 function ownSkillsText(info) {
-    const list = (skills) => skillNames(skills, 8);
+    const list = (skills) => someNames(skillNames(skills), 8);
+    const fate = info.distrusted ? "They stay off until you trust this project." : "Pi has them.";
     const texts = [];
 
     if (info.skills.length > 0) {
-        texts.push(
-            `In .pi-pocket/skills above this folder: ${list(info.skills)}. ${info.trusted ? "Pi has them." : "They stay off until you trust this project."}`,
-        );
+        texts.push(`In .pi-pocket/skills above this folder: ${list(info.skills)}. ${fate}`);
     }
 
     if (info.ownSkills.length > 0) {
-        texts.push(
-            `In .pi-pocket/skills here: ${list(info.ownSkills)}. ${info.trusted ? "Pi has them." : "They stay off until you trust this project."}`,
-        );
+        texts.push(`In .pi-pocket/skills here: ${list(info.ownSkills)}. ${fate}`);
     }
 
     return texts.length > 0

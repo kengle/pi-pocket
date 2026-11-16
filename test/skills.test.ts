@@ -112,24 +112,27 @@ test("the nearest folder of a name wins", () => {
     );
 });
 
-test("a project offers no skills until Pi is told to trust it", () => {
+test("a project's skills load unless Pi was told not to trust it", () => {
     const { agentDir, repo, cwd, sources } = fixture();
 
-    // No decision: nothing loads, and nothing is asked of Pi's own setting here.
-    assert.deepEqual(names(cwd, sources), []);
-    assert.deepEqual(names(cwd, { ...sources, defaultProjectTrust: "always" }), [
-        "here",
-        "repo-wide",
-    ]);
+    // No decision: the project's skills load, as they always did, and nothing is asked.
+    assert.deepEqual(names(cwd, sources), ["here", "repo-wide"]);
+    assert.deepEqual(names(cwd, { ...sources, defaultProjectTrust: "ask" }), ["here", "repo-wide"]);
+    assert.equal(readProjectTrust(cwd, sources).ask, false, "nothing to ask about");
+
+    // Pi's own setting "never" keeps them out; a saved yes changes nothing here.
     assert.deepEqual(names(cwd, { ...sources, defaultProjectTrust: "never" }), []);
 
-    // A saved no for the repository counts for the folder in it.
+    // A saved no for the repository counts for the folder in it, and is the one state that asks.
     new ProjectTrustStore(agentDir).set(repo, false);
     assert.deepEqual(names(cwd, sources), []);
+    assert.equal(readProjectTrust(cwd, sources).ask, true, "a saved no offers the way back");
+    assert.equal(readProjectTrust(cwd, sources).distrusted, true);
 
-    // A saved yes is the one thing that loads them, and the nearest saved answer wins.
+    // A saved yes is the way back, and the nearest saved answer wins.
     trusting(agentDir, repo);
     assert.deepEqual(names(cwd, sources), ["here", "repo-wide"]);
+    assert.equal(readProjectTrust(cwd, sources).ask, false);
     new ProjectTrustStore(agentDir).set(cwd, false);
     assert.deepEqual(names(cwd, { ...sources, defaultProjectTrust: "always" }), []);
 });
@@ -210,7 +213,7 @@ test("a skill is counted once, whatever one folder or two of them hold", () => {
         ["only-one"],
     );
     assert.equal(new Set([...alone.skills, ...alone.ownSkills].map((each) => each.name)).size, 1);
-    assert.equal(alone.ask, true, "one skill of the folder's own still asks");
+    assert.equal(alone.ask, false, "nothing is asked of a project nobody decided about");
 
     // In a repository, one skill in its folder and one in the repository's own: two skills, two names.
     const repo = join(base, "repo");
