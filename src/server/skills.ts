@@ -188,8 +188,13 @@ export function readProjectTrust(cwd: string, sources: SkillSources): ProjectTru
                   skillPaths: paths,
                   includeDefaults: false,
               }).skills.map(({ name, description }) => ({ name, description }));
-    const skills = skillsIn(folders);
+    // The folder's own skills and those above it, never both for one name: a name nearer the session is the one counted,
+    // as `loadSkills` loads it. The trust bar said "keep 2 skills (a, a)" for one skill on disk before this.
     const ownSkills = skillsIn(existsSync(own) ? [own] : []);
+    const nearer = new Set(ownSkills.map((each) => each.name));
+    const skills = skillsIn(folders.filter((each) => each !== own)).filter(
+        (each) => !nearer.has(each.name),
+    );
     const settings = existsSync(projectSettingsFile(folder));
 
     return {
@@ -204,7 +209,7 @@ export function readProjectTrust(cwd: string, sources: SkillSources): ProjectTru
         settings,
         // Empty skill folders do not ask, but a settings-only project does. An unreadable trust store cannot save.
         ask:
-            (skills.length > 0 || settings) &&
+            (skills.length + ownSkills.length > 0 || settings) &&
             saved === null &&
             sources.defaultProjectTrust === "ask",
         ...(saved === undefined ? { unreadable: true as const } : {}),

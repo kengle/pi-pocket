@@ -65,10 +65,13 @@ export function loadTrust({ force = false } = {}) {
     );
 }
 
-/** The skills' names, a few of them: "deploy, review, and 3 more". */
-function skillNames(skills, most = 3) {
-    const names = skills.map((skill) => skill.name);
+/** The skills' names, once each: a name a folder holds, and another folder holds again, is one skill. */
+function skillNames(skills) {
+    return [...new Set(skills.map((skill) => skill.name))];
+}
 
+/** A few of the names: "deploy, review, and 3 more". */
+function someNames(names, most = 3) {
     if (names.length <= most) {
         return names.join(", ");
     }
@@ -103,7 +106,9 @@ async function decide(choice) {
             ? `${shortPath(info.parent, server?.home)} and the folders in it`
             : "this project";
     const skills =
-        info.skills.length > 0 ? ` Pi has its skills from now on: ${skillNames(info.skills)}.` : "";
+        info.skills.length > 0
+            ? ` Pi has its skills from now on: ${someNames(skillNames(info.skills))}.`
+            : "";
 
     const defaults = info.settings
         ? " Project model defaults apply only to later new sessions; this session will not change."
@@ -129,9 +134,13 @@ export function TrustBar() {
         return null;
     }
 
+    // The count is the names, not the folders they came from: one skill in two folders is one skill.
+    const waiting = skillNames([...info.ownSkills, ...info.skills]);
+    const keep = waiting.length;
+
     return html`<div class="trust-bar">
         <span class="grow">
-            <strong>Trust this project?</strong>${" "}${`This folder and the folders above it keep ${String(info.skills.length + info.ownSkills.length)} skill${info.skills.length + info.ownSkills.length === 1 ? "" : "s"} that stay off until you trust this project (${skillNames([...info.ownSkills, ...info.skills])}).${info.settings ? " Its .pi-pocket/settings.json can also set the model and thinking level of later new sessions; this session will not change." : ""}`}
+            <strong>Trust this project?</strong>${" "}${`This folder and the folders above it keep ${String(keep)} skill${keep === 1 ? "" : "s"} that stay off until you trust this project (${someNames(waiting)}).${info.settings ? " Its .pi-pocket/settings.json can also set the model and thinking level of later new sessions; this session will not change." : ""}`}
         </span>
         <span class="trust-actions">
             <button class="link small" onClick=${() => attempt(() => decide("distrust"))}>

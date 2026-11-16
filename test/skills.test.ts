@@ -163,7 +163,11 @@ test("readProjectTrust reports the folders nearest first, and the skills in them
         join(cwd, ".pi-pocket", "skills"),
         join(repo, ".pi-pocket", "skills"),
     ]);
-    assert.deepEqual(trust.skills.map((each) => each.name).sort(), ["here", "repo-wide"]);
+    // The folder's own skill is `ownSkills`; the repository's is `skills`: no name is in both.
+    assert.deepEqual(
+        trust.skills.map((each) => each.name),
+        ["repo-wide"],
+    );
     assert.deepEqual(
         trust.ownSkills.map((each) => each.name),
         ["here"],
@@ -185,6 +189,55 @@ test("the walk stops at the repository's root, and outside a repository at the f
     new ProjectTrustStore(agentDir).set(loose, true);
     assert.deepEqual(skillPlaces(loose, sources), [join(loose, ".pi-pocket", "skills")]);
     assert.deepEqual(names(loose, sources), ["its-own"]);
+});
+
+test("a skill is counted once, whatever one folder or two of them hold", () => {
+    const base = realpathSync(mkdtempSync(join(root, "counted-")));
+    const agentDir = join(base, "agent");
+    const sources: SkillSources = { agentDir, defaultProjectTrust: "ask" };
+
+    // Outside a repository, one skill in the folder itself: one skill, and it still waits for a decision.
+    const loose = join(base, "loose");
+
+    skill(join(loose, ".pi-pocket", "skills"), "only-one");
+
+    const alone = readProjectTrust(loose, sources);
+
+    assert.deepEqual(alone.folders, [join(loose, ".pi-pocket", "skills")]);
+    assert.deepEqual(alone.skills, []);
+    assert.deepEqual(
+        alone.ownSkills.map((each) => each.name),
+        ["only-one"],
+    );
+    assert.equal(new Set([...alone.skills, ...alone.ownSkills].map((each) => each.name)).size, 1);
+    assert.equal(alone.ask, true, "one skill of the folder's own still asks");
+
+    // In a repository, one skill in its folder and one in the repository's own: two skills, two names.
+    const repo = join(base, "repo");
+
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    skill(join(repo, ".pi-pocket", "skills"), "above-it");
+    skill(join(repo, "app", ".pi-pocket", "skills"), "its-own");
+
+    const two = readProjectTrust(join(repo, "app"), sources);
+    const names = [...two.ownSkills, ...two.skills].map((each) => each.name);
+
+    assert.deepEqual(names, ["its-own", "above-it"]);
+    assert.equal(new Set(names).size, 2);
+
+    // The same name in both folders is one skill: the one in the session's own folder.
+    skill(join(repo, ".pi-pocket", "skills"), "its-own");
+
+    const same = readProjectTrust(join(repo, "app"), sources);
+
+    assert.deepEqual(
+        same.skills.map((each) => each.name),
+        ["above-it"],
+    );
+    assert.deepEqual(
+        same.ownSkills.map((each) => each.name),
+        ["its-own"],
+    );
 });
 
 test("a skill linked into two folders is listed once", () => {
