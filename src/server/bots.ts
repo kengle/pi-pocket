@@ -1,24 +1,24 @@
 /**
  * Predefined bots, for PiP to start a session with: a file in the data folder's `bots/` (`<name>.json`) holding what Pi
- * is told in every request of the session, the names of the skills it gets, and how it runs (its model and thinking
- * level); and a pool of skills in `bots/skills/`, each a folder with a `SKILL.md`. A bot is read and checked before any
- * session is made, so a bot that cannot be given in full leaves none behind. Its skills are then copied into the
- * session's folder as `.pi/skills/<name>/`, where Pi loads them, and a folder already there with other files is never
- * overwritten: `checkSkills` says before a session is made that they can go in. Whether the model works here is for the
- * caller to check: it knows the models signed in.
+ * is told in every request of the session, the names of the skills it gets from the skills hub (`hub.ts`), and how it
+ * runs (its model and thinking level). A bot is read and checked before any session is made, so a bot that cannot be
+ * given in full leaves none behind: a skill it names that the hub does not have stops the call. Nothing is copied into
+ * the session's folder: the session reads a hub skill where the hub keeps it, and the person's own copy of a skill in the
+ * project stays theirs. Whether the model works here is for the caller to check: it knows the models signed in.
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { MAX_INSTRUCTIONS } from "./commands.ts";
 import { describe, HttpError } from "./errors.ts";
 import { quoted } from "./fence.ts";
+import type { Hub } from "./hub.ts";
 import { isThinkingLevel, THINKING_LEVELS } from "./models.ts";
-import { displayPath, homePath, skillsSubdir } from "./paths.ts";
+import { homePath } from "./paths.ts";
 
 /**
- * A bot as its file says it: what Pi is told in every request of the session, the skills its folder gets, and the model
- * it runs on with the thinking level it starts at.
+ * A bot as its file says it: what Pi is told in every request of the session, the skills it gets from the hub, and the
+ * model it runs on with the thinking level it starts at.
  */
 export type Bot = {
     instructions: string;
@@ -28,8 +28,8 @@ export type Bot = {
     thinking?: ModelThinkingLevel;
 };
 
-/** What installing a bot's skills came to: the folders written, and those already there as the bot has them. */
-export type BotInstall = { installed: string[]; skipped: string[] };
+/** What a bot's skills came to: those the hub has, and those it does not. */
+export type BotInstall = { hub: string[]; missing: string[] };
 
 /** Whether a name is one name inside the bots folder: never a path, so nothing outside it is read or written. */
 const isOneName = (name: string) =>
@@ -53,13 +53,21 @@ function botsHere(dataDir: string): string {
         : `The bots there are: ${names.map((each) => quoted(each)).join(", ")}.`;
 }
 
+/** The hub's skills, as an error says them: their names, or that it has none. */
+function hubHere(hub: Hub): string {
+    const names = [...hub.skills.keys()];
+
+    return names.length === 0
+        ? `The skills hub (${homePath(hub.folder)}) has no skills yet.`
+        : `The skills hub (${homePath(hub.folder)}) has: ${names.map((each) => quoted(each)).join(", ")}.`;
+}
+
 /**
  * The bot named `bot` in the data folder, read and checked: its instructions, at most as long as a person may set them,
- * its skills, each one a folder with a `SKILL.md` in the pool, and its model and thinking level. A name that is not
- * there, bad JSON, or a skill that is not there is an error that says so, and stops the call before any session is
- * made.
+ * its skills, each one a skill of the hub, and its model and thinking level. A name that is not there, bad JSON, or a
+ * skill the hub does not have is an error that says so, and stops the call before any session is made.
  */
-export function readBot(dataDir: string, bot: string): Bot {
+export function readBot(dataDir: string, bot: string, hub: Hub): Bot {
     const name = bot.trim();
 
     if (!isOneName(name)) {
@@ -118,21 +126,20 @@ export function readBot(dataDir: string, bot: string): Bot {
         throw new HttpError(400, `The skills of bot ${quoted(name)} must be a list of names.`);
     }
 
-    const pool = join(dataDir, "bots", "skills");
     const named = (skills ?? []).map((each: unknown) => {
         const skill = typeof each === "string" ? each.trim() : "";
 
         if (!isOneName(skill)) {
             throw new HttpError(
                 400,
-                `A skill of bot ${quoted(name)} must be one name in the bots folder, not a path: ${quoted(String(each))}`,
+                `A skill of bot ${quoted(name)} must be one name in the skills hub, not a path: ${quoted(String(each))}`,
             );
         }
 
-        if (!existsSync(join(pool, skill, "SKILL.md"))) {
+        if (!hub.skills.has(skill)) {
             throw new HttpError(
                 400,
-                `The bot ${quoted(name)} needs the skill ${quoted(skill)}, and ${homePath(join(pool, skill))} has no SKILL.md.`,
+                `The bot ${quoted(name)} needs the skill ${quoted(skill)}, and the skills hub has none of that name: ${homePath(join(hub.folder, "skills", skill))} has no SKILL.md. ${hubHere(hub)}`,
             );
         }
 
@@ -162,108 +169,16 @@ export function readBot(dataDir: string, bot: string): Bot {
 }
 
 /**
- * Whether a name is not part of a skill: compiled caches (`__pycache__`, `.pyc`, `.pyo`), and what a file system or a
- * clone left behind (`.DS_Store`, `.git`). A copy leaves them out, and a comparison does not read them, so a pool with
- * caches and a folder without them are the same skill.
+ * A bot's skills, as the hub has them now: the names it answers to, and those it does not have (the hub may have changed
+ * since the bot was read). Nothing is written: the session reads them where they are.
  */
-function ignored(name: string): boolean {
-    return (
-        name === "__pycache__" ||
-        name === ".git" ||
-        name === ".DS_Store" ||
-        name.endsWith(".pyc") ||
-        name.endsWith(".pyo")
-    );
-}
-
-/** A folder's entries that a skill has, sorted: what a copy writes, and what a comparison reads. */
-function entriesOf(folder: string): string[] {
-    return readdirSync(folder, { withFileTypes: true })
-        .filter((entry) => !ignored(entry.name))
-        .map((entry) => `${entry.isDirectory() ? "folder" : "file"}:${entry.name}`)
-        .sort();
-}
-
-/** Whether two folders hold the same files, at the same places, with the same contents: caches left out of both. */
-function sameFolder(left: string, right: string): boolean {
-    const names = entriesOf(left);
-
-    if (names.join("\n") !== entriesOf(right).join("\n")) {
-        return false;
-    }
-
-    return names.every((each) => {
-        const name = each.slice(each.indexOf(":") + 1);
-        const from = join(left, name);
-        const to = join(right, name);
-
-        return each.startsWith("folder:")
-            ? sameFolder(from, to)
-            : readFileSync(from).equals(readFileSync(to));
-    });
-}
-
-/**
- * The error for a skill whose folder in `cwd` is not the bot's own: nothing is overwritten, and the folder is named.
- */
-function conflict(name: string, target: string, cwd: string): HttpError {
-    return new HttpError(
-        409,
-        `The skill ${quoted(name)} is already in this session's folder, as ${displayPath(target, cwd)}, with files that are not the bot's: nothing is overwritten. Move it away, or start the bot in another folder.`,
-    );
-}
-
-/**
- * Whether a bot's skills can go into `cwd`: each one either not there yet, or there as the bot has it. One whose folder
- * holds other files is an error that names it; one that holds only caches has nothing of its own yet, and can take the
- * skill. This reads only, so a caller can ask before it makes a session.
- */
-export function checkSkills(dataDir: string, cwd: string, skills: readonly string[]): void {
-    for (const name of skills) {
-        const target = join(skillsSubdir(cwd), name);
-
-        if (
-            existsSync(target) &&
-            entriesOf(target).length > 0 &&
-            !sameFolder(join(dataDir, "bots", "skills", name), target)
-        ) {
-            throw conflict(name, target, cwd);
-        }
-    }
-}
-
-/**
- * A bot's skills, in a session's folder: each one copied from the pool to `<cwd>/.pi/skills/<name>/`, without the caches
- * no skill needs. A folder already there as the bot has it is skipped, since the session has that skill already; one
- * holding only caches gets the skill; one with files of its own stops the call, naming it, because a folder in someone's
- * project is theirs to keep.
- */
-export function installSkills(dataDir: string, cwd: string, skills: readonly string[]): BotInstall {
-    const pool = join(dataDir, "bots", "skills");
-    const installed: string[] = [];
-    const skipped: string[] = [];
+export function botSkills(hub: Hub, skills: readonly string[]): BotInstall {
+    const found: string[] = [];
+    const missing: string[] = [];
 
     for (const name of skills) {
-        const source = join(pool, name);
-        const target = join(skillsSubdir(cwd), name);
-        const there = existsSync(target);
-
-        if (there && sameFolder(source, target)) {
-            skipped.push(name);
-            continue;
-        }
-
-        if (there && entriesOf(target).length > 0) {
-            throw conflict(name, target, cwd);
-        }
-
-        mkdirSync(dirname(target), { recursive: true });
-        cpSync(source, target, {
-            recursive: true,
-            filter: (from: string) => !ignored(basename(from)),
-        });
-        installed.push(name);
+        (hub.skills.has(name) ? found : missing).push(name);
     }
 
-    return { installed, skipped };
+    return { hub: found, missing };
 }

@@ -1,5 +1,5 @@
 // Predefined bots: a bot file's instructions, skills, model, and thinking level, read and checked before a session is
-// made; its skills copied into the folder the session works in, never over a folder that is not the bot's; the bot
+// made; its skills named from the skills hub and read there, with nothing written into the session's folder; the bot
 // recorded in the session's entry, and the sessions tool's filter by it; and a session started without one, as before.
 import {
     type App,
@@ -14,7 +14,7 @@ import {
 } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
@@ -22,7 +22,8 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 import type { ConversationId } from "@earendil-works/pi-durable";
 
 const dataDir = join(root, "bots-data");
-const pool = join(dataDir, "bots", "skills");
+/** The skills hub bots name skills in: the data folder's `skills-hub/`, as `hub.ts` resolves it. */
+const hub = join(dataDir, "skills-hub");
 /** Each session's own folder, holding nothing another test's skills could be taken for. */
 const folderOf = (name: string) => join(root, `bots-${name}`);
 
@@ -77,15 +78,12 @@ function bot(name: string, value: unknown): void {
     writeFileSync(join(dataDir, "bots", `${name}.json`), JSON.stringify(value));
 }
 
-/** A skill in the pool as a real one is: its own files, and the build caches no skill needs. */
-function poolSkillWithCaches(name: string): void {
-    const folder = join(pool, name);
+/** A skill in the hub, as a real one is: a folder with a `SKILL.md`. */
+function hubSkill(name: string, text = SKILL): void {
+    const folder = join(hub, "skills", name);
 
-    mkdirSync(join(folder, "__pycache__"), { recursive: true });
-    writeFileSync(join(folder, "SKILL.md"), SKILL);
-    writeFileSync(join(folder, "helper.pyc"), "cache\n");
-    writeFileSync(join(folder, "__pycache__", "helper.cpython-313.pyc"), "cache\n");
-    writeFileSync(join(folder, ".DS_Store"), "cache\n");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "SKILL.md"), text);
 }
 
 /** The owner's PiP, on the scripted model. */
@@ -113,9 +111,14 @@ async function said(id: ConversationId): Promise<string[]> {
     );
 }
 
+/** The skills the hub is told to have in a session's instructions: its commit, a line per skill, and the rest. */
+const HUB_HEAD = /Skills of the skills hub \(hub @ \S+\), which this session reads with skills_get/;
+const LOCAL_WINS =
+    /A skill of the same name in this project's \.pi-pocket\/skills is the one to follow/;
+
 before(async () => {
-    mkdirSync(join(pool, "polish"), { recursive: true });
-    writeFileSync(join(pool, "polish", "SKILL.md"), SKILL);
+    mkdirSync(join(dataDir, "bots"), { recursive: true });
+    hubSkill("polish");
 
     for (const name of ["good", "taken", "plain", "tool"]) {
         mkdirSync(folderOf(name), { recursive: true });
@@ -130,7 +133,7 @@ after(async () => {
     cleanUp();
 });
 
-test("a bot gives a session its instructions, model, thinking level, and skills", async () => {
+test("a bot gives a session its instructions, model, thinking level, and hub skills", async () => {
     const id = await pip();
     const folder = folderOf("good");
     const instructions = "Always answer in French. Keep every fact.";
@@ -140,27 +143,34 @@ test("a bot gives a session its instructions, model, thinking level, and skills"
     const made = await app.pip.startBot(id, { bot: "reviewer", folder });
     const state = await app.agentState(made.id);
 
-    assert.deepEqual(made.installed, ["polish"]);
-    assert.deepEqual(made.skipped, []);
+    assert.deepEqual(made.hub, ["polish"]);
+    assert.deepEqual(made.missing, []);
     assert.equal(made.folder, folder);
-    assert.equal(state?.instructions, instructions);
     assert.equal(state?.model?.modelId, "faux-1");
     // faux-1 has no thinking levels, so the bot's high is lowered to the one it has.
     assert.equal(state?.thinkingLevel, "off");
     assert.equal(app.sessionMeta(made.id)?.bot, "reviewer");
-    assert.equal(
-        readFileSync(join(folder, ".pi-pocket", "skills", "polish", "SKILL.md"), "utf8"),
-        SKILL,
-    );
 
-    // The same bot again, in the same folder: the skill is there as the bot has it, so it stays as it is.
+    // What Pi is told: the bot's own instructions, then the hub's skills, each with what it is for.
+    assert.match(
+        state?.instructions ?? "",
+        /^Always answer in French\. Keep every fact\.\n\nSkills/,
+    );
+    assert.match(state?.instructions ?? "", HUB_HEAD);
+    assert.match(state?.instructions ?? "", /\n- polish: Polish the prose of a file\.\n/);
+    assert.match(state?.instructions ?? "", LOCAL_WINS);
+
+    // Nothing is copied into the session's folder: the skill stays in the hub.
+    assert.equal(existsSync(join(folder, ".pi-pocket", "skills", "polish")), false);
+
+    // The same bot again, in the same folder: the hub has it once, and both sessions name it.
     const again = await app.pip.startBot(id, { bot: "reviewer", folder });
 
-    assert.deepEqual(again.installed, []);
-    assert.deepEqual(again.skipped, ["polish"]);
+    assert.deepEqual(again.hub, ["polish"]);
+    assert.deepEqual(again.missing, []);
 });
 
-test("a bot that names a skill the pool does not have makes no session", async () => {
+test("a bot that names a skill the hub does not have makes no session", async () => {
     const id = await pip();
     const before = app.sessions().length;
 
@@ -168,7 +178,7 @@ test("a bot that names a skill the pool does not have makes no session", async (
 
     await assert.rejects(
         app.pip.startBot(id, { bot: "gappy", folder: folderOf("plain") }),
-        /needs the skill “absent”, and .*bots\/skills\/absent has no SKILL\.md/,
+        /needs the skill “absent”, and the skills hub has none of that name: .*skills-hub\/skills\/absent has no SKILL\.md\. The skills hub .* has: “polish”/,
     );
     assert.equal(app.sessions().length, before, "no session made");
     await assert.rejects(
@@ -181,25 +191,23 @@ test("a bot that names a skill the pool does not have makes no session", async (
     );
 });
 
-test("a bot never writes over a folder of the person's own, and names it", async () => {
+test("a project's own copy of a skill is left as it is, and the session is told it wins", async () => {
     const id = await pip();
     const folder = folderOf("taken");
     const mine = join(folder, ".pi-pocket", "skills", "polish", "SKILL.md");
-    const before = app.sessions().length;
 
     bot("taken", { skills: ["polish"], model: "faux/faux-1" });
     mkdirSync(join(folder, ".pi-pocket", "skills", "polish"), { recursive: true });
-    writeFileSync(mine, "Mine, and not the bot's.\n");
+    writeFileSync(mine, "Mine, and not the hub's.\n");
 
-    await assert.rejects(
-        app.pip.startBot(id, { bot: "taken", folder }),
-        /already in this session's folder, as \.pi-pocket\/skills\/polish, with files that are not the bot's/,
-    );
-    assert.equal(app.sessions().length, before, "no session made");
-    assert.equal(readFileSync(mine, "utf8"), "Mine, and not the bot's.\n");
+    const made = await app.pip.startBot(id, { bot: "taken", folder });
+
+    assert.deepEqual(made.hub, ["polish"]);
+    assert.equal(readFileSync(mine, "utf8"), "Mine, and not the hub's.\n");
+    assert.match((await app.agentState(made.id))?.instructions ?? "", LOCAL_WINS);
 });
 
-test("a worktree's skills are checked once its folder is made, and the error names the session", async () => {
+test("a bot in a worktree names its hub skills, and the worktree gets no copy", async () => {
     const id = await pip();
     const repo = folderOf("repo");
     const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
@@ -209,57 +217,45 @@ test("a worktree's skills are checked once its folder is made, and the error nam
     writeFileSync(join(repo, "README.md"), "A repository.\n");
     git("add", "README.md");
     git("-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "first");
-    // A worktree starts with the repository's new files: this skill folder comes with them, and is not the bot's.
-    mkdirSync(join(repo, ".pi-pocket", "skills", "polish"), { recursive: true });
-    writeFileSync(join(repo, ".pi-pocket", "skills", "polish", "SKILL.md"), "Mine.\n");
 
     bot("worktree", { skills: ["polish"], model: "faux/faux-1" });
 
+    const made = await app.pip.startBot(id, { bot: "worktree", folder: repo, worktree: true });
+    const state = await app.agentState(made.id);
+
+    assert.ok(app.sessionMeta(made.id)?.worktree !== undefined, "with its worktree");
+    assert.deepEqual(made.hub, ["polish"]);
+    assert.match(state?.instructions ?? "", HUB_HEAD);
+    assert.equal(existsSync(join(app.cwdOf(made.id), ".pi-pocket", "skills", "polish")), false);
+});
+
+test("a bot's instructions and its hub skills are as limited as a person's", async () => {
+    const id = await pip();
     const before = app.sessions().length;
 
+    bot("long", { instructions: "x".repeat(8001), skills: [], model: "faux/faux-1" });
+
     await assert.rejects(
-        app.pip.startBot(id, { bot: "worktree", folder: repo, worktree: true }),
-        /Session \/s\/\d+ was made in .*without the bot's skills: .*already in this session's folder/,
+        app.pip.startBot(id, { bot: "long", folder: folderOf("plain") }),
+        /Instructions are limited to 8000 characters/,
     );
 
-    const made = app.sessions().find((session) => session.bot === "worktree");
-
-    assert.equal(app.sessions().length, before + 1, "the session was made, as the error says");
-    assert.ok(made?.worktree !== undefined, "with its worktree");
-    assert.equal(
-        (await app.agentState(made!.id as unknown as ConversationId))?.instructions,
-        undefined,
+    // A bot that fits, but whose instructions and the hub's list together do not: no session is made either.
+    hubSkill(
+        "prolix",
+        ["---", `description: ${"d".repeat(200)}`, "---", "", "A skill.", ""].join("\n"),
     );
-});
+    bot("wide", {
+        instructions: "y".repeat(7900),
+        skills: ["prolix"],
+        model: "faux/faux-1",
+    });
 
-test("a bot copies its skill without the pool's build caches", async () => {
-    const id = await pip();
-    const folder = join(root, "bots-cache");
-
-    poolSkillWithCaches("cached");
-    mkdirSync(folder, { recursive: true });
-    bot("cached", { skills: ["cached"], model: "faux/faux-1" });
-
-    const made = await app.pip.startBot(id, { bot: "cached", folder });
-
-    assert.deepEqual(made.installed, ["cached"]);
-    assert.deepEqual(readdirSync(join(folder, ".pi-pocket", "skills", "cached")), ["SKILL.md"]);
-});
-
-test("a folder holding only caches takes the skill, with no conflict", async () => {
-    const id = await pip();
-    const folder = join(root, "bots-cache-only");
-    const target = join(folder, ".pi-pocket", "skills", "cached");
-
-    poolSkillWithCaches("cached");
-    mkdirSync(join(target, "__pycache__"), { recursive: true });
-    writeFileSync(join(target, "__pycache__", "helper.cpython-313.pyc"), "cache\n");
-    bot("cached-only", { skills: ["cached"], model: "faux/faux-1" });
-
-    const made = await app.pip.startBot(id, { bot: "cached-only", folder });
-
-    assert.deepEqual(made.installed, ["cached"]);
-    assert.equal(readFileSync(join(target, "SKILL.md"), "utf8"), SKILL);
+    await assert.rejects(
+        app.pip.startBot(id, { bot: "wide", folder: folderOf("plain") }),
+        /instructions are limited to 8000: a shorter bot, or a shorter skill description/,
+    );
+    assert.equal(app.sessions().length, before, "no session made");
 });
 
 test("a bot without a model makes no session", async () => {
@@ -288,19 +284,6 @@ test("a bot with a thinking level that is not one makes no session", async () =>
     assert.equal(app.sessions().length, before, "no session made");
 });
 
-test("a bot's instructions are as limited as a person's", async () => {
-    const id = await pip();
-    const before = app.sessions().length;
-
-    bot("long", { instructions: "x".repeat(8001), skills: [], model: "faux/faux-1" });
-
-    await assert.rejects(
-        app.pip.startBot(id, { bot: "long", folder: folderOf("plain") }),
-        /Instructions are limited to 8000 characters/,
-    );
-    assert.equal(app.sessions().length, before, "no session made");
-});
-
 test("a session started without a bot is as it was, and no bot made it", async () => {
     const id = await pip();
     const folder = folderOf("plain");
@@ -310,10 +293,7 @@ test("a session started without a bot is as it was, and no bot made it", async (
     assert.equal((await app.agentState(made))?.instructions, undefined);
     assert.equal(app.sessionMeta(made)?.bot, undefined);
     assert.equal(listed?.bot, undefined);
-    await assert.rejects(
-        (async () => readFileSync(join(folder, ".pi-pocket", "skills", "polish", "SKILL.md")))(),
-        /ENOENT/,
-    );
+    assert.equal(existsSync(join(folder, ".pi-pocket", "skills", "polish")), false);
 });
 
 test("the sessions tool lists only the sessions a bot made when it says which", async () => {
@@ -357,14 +337,14 @@ test("PiP starts a bot's session with bot_start, and says where it works and wha
     assert.ok(
         (await said(id))
             .join("\n")
-            .includes(`Bot “starting”: folder ${folder}. Installed skills: polish.`),
+            .includes(`Bot “starting”: folder ${folder}. Skills from the hub: polish.`),
     );
     const made = app.sessions().find((session) => session.title === "bot tool");
 
     assert.equal(made?.bot, "starting");
-    assert.equal(
-        (await app.agentState(made!.id as unknown as ConversationId))?.instructions,
-        "Answer with the review only.",
+    assert.match(
+        (await app.agentState(made!.id as unknown as ConversationId))?.instructions ?? "",
+        /^Answer with the review only\.\n\nSkills of the skills hub/,
     );
 
     // session_start takes no bot: only bot_start does.

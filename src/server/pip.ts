@@ -38,8 +38,9 @@ import {
     type Tx,
 } from "@earendil-works/pi-durable";
 import type { PocketApp } from "./app.ts";
-import { type BotInstall, checkSkills, installSkills, readBot } from "./bots.ts";
-import { MAX_HANDOFF, writeInstructions } from "./commands.ts";
+import { type BotInstall, botSkills, readBot } from "./bots.ts";
+import { type Hub, hubFolder, hubLines, readHub } from "./hub.ts";
+import { MAX_HANDOFF, MAX_INSTRUCTIONS, writeInstructions } from "./commands.ts";
 import type { User } from "./config.ts";
 import { AuthorsDoc, FollowsDoc, PipAskedDoc, SessionsDoc } from "./docs.ts";
 import { presentationOptions, presentationPip } from "./entry-presentation.ts";
@@ -240,6 +241,22 @@ export function ago(moment: number, now: number): string {
     const hours = Math.round(minutes / 60);
 
     return hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
+}
+
+/** What a bot's session is told before its first message: its instructions, and the hub skills it may read. */
+function botTold(instructions: string, hub: Hub, skills: readonly string[]): string {
+    const lines = hubLines(hub, skills);
+    const text =
+        lines.length === 0 ? instructions : [instructions, lines.join("\n")].join("\n\n").trim();
+
+    if (text.length > MAX_INSTRUCTIONS) {
+        throw new HttpError(
+            413,
+            `The bot's instructions and the skills hub's list come to ${String(text.length)} characters, and instructions are limited to ${String(MAX_INSTRUCTIONS)}: a shorter bot, or a shorter skill description.`,
+        );
+    }
+
+    return text;
 }
 
 export class Pip {
@@ -1084,10 +1101,10 @@ export class Pip {
     }
 
     /**
-     * Start a session from a predefined bot (`bots.ts`): its instructions, model, thinking level, and skills, before its
-     * first message runs. The bot is read and checked first, and so are its model and the folders its skills go in, so a
-     * bot that cannot be given in full leaves no session behind. Only a worktree's folder is made with the session, and
-     * is checked after it (`#worktreeSkills`).
+     * Start a session from a predefined bot (`bots.ts`): its instructions, model, thinking level, and the skills it names
+     * from the skills hub (`hub.ts`), before its first message runs. The bot is read and checked first, with its model,
+     * so a bot that cannot be given in full leaves no session behind. Nothing is written into the session's folder: the
+     * skills stay in the hub, and the session is told them with the hub's commit.
      */
     async startBot(
         pipId: ConversationId,
@@ -1095,7 +1112,11 @@ export class Pip {
     ): Promise<BotStart> {
         const app = this.#app;
         const user = this.#person(pipId);
-        const bot = readBot(app.dataDir, request.bot);
+        const hub = readHub(
+            hubFolder(app.dataDir, app.config.extensionSettings("skills-hub").hubPath),
+        );
+        const bot = readBot(app.dataDir, request.bot, hub);
+        const told = botTold(bot.instructions, hub, bot.skills);
         const found = findModel(app.models, bot.model);
 
         if (found === undefined) {
@@ -1116,10 +1137,6 @@ export class Pip {
         // A worktree's folder is made with the session: nothing can be read there before the session is made.
         const place = request.worktree === true ? undefined : await this.#placeOf(pipId, request);
 
-        if (place !== undefined) {
-            checkSkills(app.dataDir, place, bot.skills);
-        }
-
         const id = await this.#startSession(
             pipId,
             user,
@@ -1131,16 +1148,12 @@ export class Pip {
         );
         const folder = app.cwdOf(id);
 
-        if (place === undefined) {
-            this.#worktreeSkills(id, folder, bot.skills);
-        }
-
-        await writeInstructions(app, id, bot.instructions);
+        await writeInstructions(app, id, told);
 
         return {
             id,
             folder: homePath(folder),
-            ...installSkills(app.dataDir, folder, bot.skills),
+            ...botSkills(hub, bot.skills),
         };
     }
 
@@ -1154,20 +1167,6 @@ export class Pip {
         return request.repo === undefined
             ? this.#app.resolveCwd(request.folder ?? this.#app.defaultCwd)
             : this.checkout(pipId, request.repo);
-    }
-
-    /**
-     * A worktree's folder, once the session has made it: a skill that cannot go there stops the call, and the error says
-     * which session was made, so a session left without its skills is never taken for a success.
-     */
-    #worktreeSkills(id: ConversationId, folder: string, skills: readonly string[]): void {
-        try {
-            checkSkills(this.#app.dataDir, folder, skills);
-        } catch (error) {
-            throw new Error(
-                `Session /s/${String(id)} was made in ${homePath(folder)}, without the bot's skills: ${describe(error)} Fix that folder, and start the bot again, or stop the session.`,
-            );
-        }
     }
 
     /**

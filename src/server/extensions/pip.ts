@@ -40,13 +40,11 @@ import { literal } from "../tool-schema.ts";
 
 const reply = (text: string) => ({ output: [{ type: "text" as const, text }] });
 
-/** What PiP's person reads of a bot's session: the folder it works in, and the skills it got there. */
-function botFacts(bot: string, { folder, installed, skipped }: BotStart): string {
+/** What PiP's person reads of a bot's session: the folder it works in, and the hub skills it names. */
+function botFacts(bot: string, { folder, hub, missing }: BotStart): string {
     const skills = [
-        ...(installed.length === 0 ? [] : [`Installed skills: ${installed.join(", ")}.`]),
-        ...(skipped.length === 0
-            ? []
-            : [`Already there, as the bot has them: ${skipped.join(", ")}.`]),
+        ...(hub.length === 0 ? [] : [`Skills from the hub: ${hub.join(", ")}.`]),
+        ...(missing.length === 0 ? [] : [`The hub does not have: ${missing.join(", ")}.`]),
     ];
 
     return ` Bot ${quoted(bot)}: folder ${snippet(folder, 300)}. ${skills.length === 0 ? "It has no skills." : skills.join(" ")}`;
@@ -416,7 +414,7 @@ export default function createPip(host: PocketHost) {
     const botStart = defineTool({
         name: "bot_start",
         description:
-            "Start a session from a predefined bot in your person's bots folder, and send it a self-contained first message. Use it only when your person names a bot they set up, and for hands-on work: the bot supplies what Pi is told, the skills its folder gets, the model, and the thinking level, so never pick those yourself. Without a message, just creates the session. Where it works is as in session_start.",
+            "Start a session from a predefined bot in your person's bots folder, and send it a self-contained first message. Use it only when your person names a bot they set up, and for hands-on work: the bot supplies what Pi is told, the skills it names from the skills hub, the model, and the thinking level, so never pick those yourself. Without a message, just creates the session. Where it works is as in session_start.",
         parameters: obj(
             {
                 bot: str({
