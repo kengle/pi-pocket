@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { Skill } from "@earendil-works/pi-coding-agent";
 import { botNow } from "../src/server/bots.ts";
-import { botSkillsBlock, formatSkills } from "../src/server/extensions/prompt.ts";
+import createPrompt, { botSkillsBlock, formatSkills } from "../src/server/extensions/prompt.ts";
 import { root } from "./helpers.ts";
 
 const skill = (name: string, filePath: string, description: string, hidden = false) =>
@@ -101,4 +101,33 @@ test("a bot's file is read again only when it changed", () => {
     assert.equal(botNow(dataDir, "nobody"), undefined);
     writeFileSync(file, "not json");
     assert.equal(botNow(dataDir, "splice"), undefined);
+});
+
+test("the sections come in one order: the bot's own skills before the project's own, the folder last", async () => {
+    const extension = (botOf: () => string | undefined) =>
+        createPrompt({
+            dataDir: root,
+            agentDir: join(root, "agent"),
+            botOf,
+        } as never) as unknown as {
+            sections: { key: string; render: (input: unknown, context: unknown) => unknown }[];
+        };
+
+    const keys = extension(() => "splice").sections.map((each) => each.key);
+
+    assert.deepEqual(keys, [
+        "preamble",
+        "guidelines",
+        "pocket_docs",
+        "project_context",
+        "bot",
+        "skills",
+        "environment",
+    ]);
+
+    // A session no bot made has the section, and the section says nothing there: no text, no place in the prompt.
+    const bot = extension(() => undefined).sections.find((each) => each.key === "bot");
+    const input = { conversationId: 1, agent: { cwd: root }, env: undefined, shown: {}, read: {} };
+
+    assert.equal(await bot?.render(input, {}), undefined);
 });

@@ -271,6 +271,7 @@ export default function createPrompt(host: PocketHost) {
             section("project_context", (input) =>
                 local(input) ? load(cwdOf(input)).context : undefined,
             ),
+            section("bot", (input) => (local(input) ? botText(input) : undefined), { tag: false }),
             section(
                 "skills",
                 (input) =>
@@ -293,7 +294,6 @@ export default function createPrompt(host: PocketHost) {
 
                 return `${base}\nToday: ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
             }),
-            section("bot", (input) => (local(input) ? botText(input) : undefined), { tag: false }),
         ],
     });
 }
