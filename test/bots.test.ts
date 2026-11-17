@@ -146,9 +146,8 @@ test("a bot gives a session its instructions, model, thinking level, and hub ski
     assert.equal(state?.thinkingLevel, "off");
     assert.equal(app.sessionMeta(made.id)?.bot, "reviewer");
 
-    // What is stored is the bot's own words: the block about its skills is the prompt's, on every request.
-    assert.equal(state?.instructions, instructions);
-    assert.equal((state?.instructions ?? "").includes("Bot skills"), false, "no block stored");
+    // Nothing is stored: the bot's role and its skills are the prompt's, made again on every request.
+    assert.equal(state?.instructions, undefined);
 
     // Nothing is copied into the session's folder: the skill stays in the hub.
     assert.equal(existsSync(join(folder, ".pi-pocket", "skills", "polish")), false);
@@ -320,7 +319,7 @@ test("PiP starts a bot's session with bot_start, and says where it works and wha
     assert.equal(made?.bot, "starting");
     assert.equal(
         (await app.agentState(made!.id as unknown as ConversationId))?.instructions,
-        "Answer with the review only.",
+        undefined,
     );
 
     // session_start takes no bot: only bot_start does.

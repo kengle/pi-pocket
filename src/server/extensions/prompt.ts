@@ -12,11 +12,9 @@ import {
     type ConversationId,
     defineExtension,
     type PromptInput,
-    type PromptSection,
     section,
-    wrapSection,
 } from "@earendil-works/pi-durable";
-import { botSkillsNow } from "../bots.ts";
+import { botNow } from "../bots.ts";
 import { APP_ROOT } from "../config.ts";
 import { hubHas } from "../hub.ts";
 import type { PocketHost } from "../host.ts";
@@ -115,21 +113,6 @@ export function botSkillsBlock(names: readonly string[], ignored: readonly strin
               .join(", ")}.`;
 }
 
-/** Where the block that versions before this one wrote into instructions starts. */
-const OLD_BLOCK = "\n\nSkills of the skills hub (hub @ ";
-
-/** Instructions without the block versions before this one wrote into them: what the session is really told. */
-export function stripHubBlock(text: string): string {
-    const at = text.indexOf(OLD_BLOCK);
-
-    return at === -1 ? text : text.slice(0, at);
-}
-
-/** Whether stored instructions carry that block: what the count of older sessions goes by. */
-export function hasHubBlock(text: string): boolean {
-    return text.includes(OLD_BLOCK);
-}
-
 /** Bot skills the hub does not have, said once each: a prompt is built on every request, and a line each time is noise. */
 const missingSaid = new Set<string>();
 
@@ -225,7 +208,7 @@ export default function createPrompt(host: PocketHost) {
      */
     const botNames = (id: ConversationId): { names: string[]; skipped: Set<string> } => {
         const bot = host.botOf(id);
-        const skills = bot === undefined ? undefined : botSkillsNow(host.dataDir, bot);
+        const skills = bot === undefined ? undefined : botNow(host.dataDir, bot)?.skills;
         const folder = host.hubFolder();
         const names: string[] = [];
 
@@ -235,7 +218,7 @@ export default function createPrompt(host: PocketHost) {
                 continue;
             }
 
-            const key = `${bot}/${name}`;
+            const key = `${String(bot)}/${name}`;
 
             if (bot !== undefined && !missingSaid.has(key)) {
                 missingSaid.add(key);
@@ -248,6 +231,31 @@ export default function createPrompt(host: PocketHost) {
         }
 
         return { names, skipped: new Set(names) };
+    };
+
+    /**
+     * What a session a bot started is told of the bot, on every request: its role definition as its file has it, then the
+     * block naming its skills. A session no bot made is told nothing here, and a bot with neither says nothing.
+     */
+    const botText = (input: PromptInput): string | undefined => {
+        const bot = host.botOf(input.conversationId);
+        const found = bot === undefined ? undefined : botNow(host.dataDir, bot);
+
+        if (found === undefined) {
+            return undefined;
+        }
+
+        const { names, skipped } = botNames(input.conversationId);
+        const ignored = host
+            .skills(cwdOf(input))
+            .map((skill) => skill.name)
+            .filter((name) => skipped.has(name));
+        const text = [found.instructions.trim(), botSkillsBlock(names, ignored)]
+            .filter((part) => part !== "")
+            .join("\n\n")
+            .trim();
+
+        return text === "" ? undefined : text;
     };
 
     const cwdOf = (input: PromptInput) => input.env?.cwd ?? input.agent.cwd ?? process.cwd();
@@ -285,31 +293,7 @@ export default function createPrompt(host: PocketHost) {
 
                 return `${base}\nToday: ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
             }),
-        ],
-        // The instructions and the bot's block go out as one: the stored instructions are the base, the block is made
-        // again on every request and never written back, so a person's own words there stay theirs.
-        wraps: [
-            wrapSection("instructions", (each: PromptSection) => ({
-                ...each,
-                render: async (input, context) => {
-                    const stored = (await each.render(input, context)) ?? "";
-                    const base = stripHubBlock(stored);
-                    const id = input.conversationId;
-
-                    if (!local(input) || host.botOf(id) === undefined) {
-                        return base === "" ? undefined : base;
-                    }
-
-                    const { names, skipped } = botNames(id);
-                    const ignored = host
-                        .skills(cwdOf(input))
-                        .map((skill) => skill.name)
-                        .filter((name) => skipped.has(name));
-                    const block = botSkillsBlock(names, ignored);
-
-                    return block === "" ? base || undefined : [base, block].join("\n\n").trim();
-                },
-            })),
+            section("bot", (input) => (local(input) ? botText(input) : undefined), { tag: false }),
         ],
     });
 }

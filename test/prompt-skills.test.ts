@@ -3,13 +3,8 @@ import { mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from 
 import { join } from "node:path";
 import { test } from "node:test";
 import type { Skill } from "@earendil-works/pi-coding-agent";
-import { botSkillsNow } from "../src/server/bots.ts";
-import {
-    botSkillsBlock,
-    formatSkills,
-    hasHubBlock,
-    stripHubBlock,
-} from "../src/server/extensions/prompt.ts";
+import { botNow } from "../src/server/bots.ts";
+import { botSkillsBlock, formatSkills } from "../src/server/extensions/prompt.ts";
 import { root } from "./helpers.ts";
 
 const skill = (name: string, filePath: string, description: string, hidden = false) =>
@@ -81,22 +76,7 @@ test("a session's own skill of a predefined name is said to be ignored, in the b
     );
 });
 
-test("the block versions before this one wrote into instructions comes out, and is found", () => {
-    const old = [
-        "你是媒体文件处理专家。",
-        "",
-        "Skills of the skills hub (hub @ aa7cee5), which this session reads with skills_get before it uses one:",
-        "- ffmpeg-skill: Edit video and audio.",
-        "A skill of the same name in this project's .pi-pocket/skills is the one to follow.",
-    ].join("\n");
-
-    assert.equal(stripHubBlock(old), "你是媒体文件处理专家。");
-    assert.equal(hasHubBlock(old), true);
-    assert.equal(stripHubBlock("Just words.\n\nMore words."), "Just words.\n\nMore words.");
-    assert.equal(hasHubBlock("Just words."), false);
-});
-
-test("a bot's skills are read again only when its file changed", () => {
+test("a bot's file is read again only when it changed", () => {
     const dataDir = realpathSync(mkdtempSync(join(root, "bot-now-")));
     const file = join(dataDir, "bots", "splice.json");
     const kept = new Date(Date.now() - 60_000);
@@ -105,19 +85,20 @@ test("a bot's skills are read again only when its file changed", () => {
     writeFileSync(file, JSON.stringify({ skills: ["ffmpeg-skill"], model: "x/y" }));
     utimesSync(file, kept, kept);
 
-    assert.deepEqual(botSkillsNow(dataDir, "splice"), ["ffmpeg-skill"]);
+    assert.deepEqual(botNow(dataDir, "splice")?.skills, ["ffmpeg-skill"]);
+    assert.equal(botNow(dataDir, "splice")?.instructions, "");
 
     // Same length, same time: the cached answer stands, as the file looks unchanged.
     writeFileSync(file, JSON.stringify({ skills: ["aaaaaaaaaaaa"], model: "x/y" }));
     utimesSync(file, kept, kept);
-    assert.deepEqual(botSkillsNow(dataDir, "splice"), ["ffmpeg-skill"]);
+    assert.deepEqual(botNow(dataDir, "splice")?.skills, ["ffmpeg-skill"]);
 
     // A new time is a changed file.
     writeFileSync(file, JSON.stringify({ skills: ["ffmpeg-skill", "oss-deploy"], model: "x/y" }));
-    assert.deepEqual(botSkillsNow(dataDir, "splice"), ["ffmpeg-skill", "oss-deploy"]);
+    assert.deepEqual(botNow(dataDir, "splice")?.skills, ["ffmpeg-skill", "oss-deploy"]);
 
     // A file that is not there, or not JSON, is no block at all.
-    assert.equal(botSkillsNow(dataDir, "nobody"), undefined);
+    assert.equal(botNow(dataDir, "nobody"), undefined);
     writeFileSync(file, "not json");
-    assert.equal(botSkillsNow(dataDir, "splice"), undefined);
+    assert.equal(botNow(dataDir, "splice"), undefined);
 });

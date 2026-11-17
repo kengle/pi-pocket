@@ -40,7 +40,7 @@ import {
 import type { PocketApp } from "./app.ts";
 import { type BotInstall, botSkills, readBot } from "./bots.ts";
 import { hubFolder, readHub } from "./hub.ts";
-import { MAX_HANDOFF, writeInstructions } from "./commands.ts";
+import { MAX_HANDOFF } from "./commands.ts";
 import type { User } from "./config.ts";
 import { AuthorsDoc, FollowsDoc, PipAskedDoc, SessionsDoc } from "./docs.ts";
 import { presentationOptions, presentationPip } from "./entry-presentation.ts";
@@ -1131,8 +1131,7 @@ export class Pip {
         );
         const folder = app.cwdOf(id);
 
-        // Only what the bot's file says: the block about its skills is the prompt's, made again on every request.
-        await writeInstructions(app, id, bot.instructions);
+        // Nothing is written as instructions: the prompt tells this session of its bot on every request (`prompt.ts`).
 
         return {
             id,

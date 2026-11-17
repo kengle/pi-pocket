@@ -183,15 +183,18 @@ export function botSkills(hub: Hub, skills: readonly string[]): BotInstall {
     return { hub: found, missing };
 }
 
-/** The skills each bot file last said, by the file's time and size: unchanged, unchanged answer. */
-const nowCache = new Map<string, { stamp: string; skills: string[] | undefined }>();
+/** What each bot file last said, by the file's time and size: unchanged file, unchanged answer. */
+const nowCache = new Map<string, { stamp: string; bot: BotNow | undefined }>();
+
+/** A bot's role definition and the skills it names, as its file says them right now. */
+export type BotNow = { instructions: string; skills: string[] };
 
 /**
- * A bot's skills as its file says them now, read again only when the file changed: a session the bot started asks its
- * prompt for them on every request, and the file is usually the same one. Undefined when the file cannot be read or is
- * not a bot's: the session then gets no block, as one started without a bot.
+ * A bot's role definition and skills as its file says them now, read again only when the file changed: a session the bot
+ * started asks its prompt for them on every request, and the file is usually the same one. Undefined when the file cannot
+ * be read or is not a bot's: the session then gets no block, as one started without a bot.
  */
-export function botSkillsNow(dataDir: string, bot: string): string[] | undefined {
+export function botNow(dataDir: string, bot: string): BotNow | undefined {
     const name = bot.trim();
 
     if (!isOneName(name)) {
@@ -212,24 +215,30 @@ export function botSkillsNow(dataDir: string, bot: string): string[] | undefined
     const cached = nowCache.get(file);
 
     if (cached !== undefined && cached.stamp === stamp) {
-        return cached.skills;
+        return cached.bot;
     }
 
-    let skills: string[] | undefined;
+    let found: BotNow | undefined;
 
     try {
-        const value = JSON.parse(readFileSync(file, "utf8")) as { skills?: unknown };
+        const value = JSON.parse(readFileSync(file, "utf8")) as {
+            instructions?: unknown;
+            skills?: unknown;
+        };
 
-        skills = Array.isArray(value.skills)
-            ? value.skills
-                  .map((each) => (typeof each === "string" ? each.trim() : ""))
-                  .filter(isOneName)
-            : [];
+        found = {
+            instructions: typeof value.instructions === "string" ? value.instructions.trim() : "",
+            skills: Array.isArray(value.skills)
+                ? value.skills
+                      .map((each) => (typeof each === "string" ? each.trim() : ""))
+                      .filter(isOneName)
+                : [],
+        };
     } catch {
-        skills = undefined;
+        found = undefined;
     }
 
-    nowCache.set(file, { stamp, skills });
+    nowCache.set(file, { stamp, bot: found });
 
-    return skills;
+    return found;
 }
