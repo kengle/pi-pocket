@@ -416,6 +416,10 @@ export interface PocketHost {
     skillPaths(): string[];
     /** Pi's skills for a session working in `cwd`, from the places Pi looks (`skills.ts`). */
     skills(cwd: string): Skill[];
+    /** The bot that started a session (`bots.ts`), by its name; undefined for a session no bot made. */
+    botOf(conversationId: ConversationId): string | undefined;
+    /** The skills hub's folder now (`hub.ts`): the owner's `hubPath` setting, else the data folder's `skills-hub/`. */
+    hubFolder(): string;
     /**
      * `provider/modelId` (or a bare model id) to a signed-in model whose sign-in has not expired, or an error that says
      * it is not available. The error names no other models: models are a person's to choose.

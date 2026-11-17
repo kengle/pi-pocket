@@ -111,11 +111,6 @@ async function said(id: ConversationId): Promise<string[]> {
     );
 }
 
-/** The skills the hub is told to have in a session's instructions: its commit, a line per skill, and the rest. */
-const HUB_HEAD = /Skills of the skills hub \(hub @ \S+\), which this session reads with skills_get/;
-const LOCAL_WINS =
-    /A skill of the same name in this project's \.pi-pocket\/skills is the one to follow/;
-
 before(async () => {
     mkdirSync(join(dataDir, "bots"), { recursive: true });
     hubSkill("polish");
@@ -151,14 +146,9 @@ test("a bot gives a session its instructions, model, thinking level, and hub ski
     assert.equal(state?.thinkingLevel, "off");
     assert.equal(app.sessionMeta(made.id)?.bot, "reviewer");
 
-    // What Pi is told: the bot's own instructions, then the hub's skills, each with what it is for.
-    assert.match(
-        state?.instructions ?? "",
-        /^Always answer in French\. Keep every fact\.\n\nSkills/,
-    );
-    assert.match(state?.instructions ?? "", HUB_HEAD);
-    assert.match(state?.instructions ?? "", /\n- polish: Polish the prose of a file\.\n/);
-    assert.match(state?.instructions ?? "", LOCAL_WINS);
+    // What is stored is the bot's own words: the block about its skills is the prompt's, on every request.
+    assert.equal(state?.instructions, instructions);
+    assert.equal((state?.instructions ?? "").includes("Bot skills"), false, "no block stored");
 
     // Nothing is copied into the session's folder: the skill stays in the hub.
     assert.equal(existsSync(join(folder, ".pi-pocket", "skills", "polish")), false);
@@ -204,7 +194,8 @@ test("a project's own copy of a skill is left as it is, and the session is told 
 
     assert.deepEqual(made.hub, ["polish"]);
     assert.equal(readFileSync(mine, "utf8"), "Mine, and not the hub's.\n");
-    assert.match((await app.agentState(made.id))?.instructions ?? "", LOCAL_WINS);
+    // Nothing of the prompt's block reaches the stored instructions.
+    assert.equal((await app.agentState(made.id))?.instructions, undefined);
 });
 
 test("a bot in a worktree names its hub skills, and the worktree gets no copy", async () => {
@@ -225,7 +216,7 @@ test("a bot in a worktree names its hub skills, and the worktree gets no copy", 
 
     assert.ok(app.sessionMeta(made.id)?.worktree !== undefined, "with its worktree");
     assert.deepEqual(made.hub, ["polish"]);
-    assert.match(state?.instructions ?? "", HUB_HEAD);
+    assert.equal(state?.instructions, undefined);
     assert.equal(existsSync(join(app.cwdOf(made.id), ".pi-pocket", "skills", "polish")), false);
 });
 
@@ -240,21 +231,6 @@ test("a bot's instructions and its hub skills are as limited as a person's", asy
         /Instructions are limited to 8000 characters/,
     );
 
-    // A bot that fits, but whose instructions and the hub's list together do not: no session is made either.
-    hubSkill(
-        "prolix",
-        ["---", `description: ${"d".repeat(200)}`, "---", "", "A skill.", ""].join("\n"),
-    );
-    bot("wide", {
-        instructions: "y".repeat(7900),
-        skills: ["prolix"],
-        model: "faux/faux-1",
-    });
-
-    await assert.rejects(
-        app.pip.startBot(id, { bot: "wide", folder: folderOf("plain") }),
-        /instructions are limited to 8000: a shorter bot, or a shorter skill description/,
-    );
     assert.equal(app.sessions().length, before, "no session made");
 });
 
@@ -342,9 +318,9 @@ test("PiP starts a bot's session with bot_start, and says where it works and wha
     const made = app.sessions().find((session) => session.title === "bot tool");
 
     assert.equal(made?.bot, "starting");
-    assert.match(
-        (await app.agentState(made!.id as unknown as ConversationId))?.instructions ?? "",
-        /^Answer with the review only\.\n\nSkills of the skills hub/,
+    assert.equal(
+        (await app.agentState(made!.id as unknown as ConversationId))?.instructions,
+        "Answer with the review only.",
     );
 
     // session_start takes no bot: only bot_start does.

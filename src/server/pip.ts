@@ -39,8 +39,8 @@ import {
 } from "@earendil-works/pi-durable";
 import type { PocketApp } from "./app.ts";
 import { type BotInstall, botSkills, readBot } from "./bots.ts";
-import { type Hub, hubFolder, hubLines, readHub } from "./hub.ts";
-import { MAX_HANDOFF, MAX_INSTRUCTIONS, writeInstructions } from "./commands.ts";
+import { hubFolder, readHub } from "./hub.ts";
+import { MAX_HANDOFF, writeInstructions } from "./commands.ts";
 import type { User } from "./config.ts";
 import { AuthorsDoc, FollowsDoc, PipAskedDoc, SessionsDoc } from "./docs.ts";
 import { presentationOptions, presentationPip } from "./entry-presentation.ts";
@@ -241,22 +241,6 @@ export function ago(moment: number, now: number): string {
     const hours = Math.round(minutes / 60);
 
     return hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
-}
-
-/** What a bot's session is told before its first message: its instructions, and the hub skills it may read. */
-function botTold(instructions: string, hub: Hub, skills: readonly string[]): string {
-    const lines = hubLines(hub, skills);
-    const text =
-        lines.length === 0 ? instructions : [instructions, lines.join("\n")].join("\n\n").trim();
-
-    if (text.length > MAX_INSTRUCTIONS) {
-        throw new HttpError(
-            413,
-            `The bot's instructions and the skills hub's list come to ${String(text.length)} characters, and instructions are limited to ${String(MAX_INSTRUCTIONS)}: a shorter bot, or a shorter skill description.`,
-        );
-    }
-
-    return text;
 }
 
 export class Pip {
@@ -1116,7 +1100,6 @@ export class Pip {
             hubFolder(app.dataDir, app.config.extensionSettings("skills-hub").hubPath),
         );
         const bot = readBot(app.dataDir, request.bot, hub);
-        const told = botTold(bot.instructions, hub, bot.skills);
         const found = findModel(app.models, bot.model);
 
         if (found === undefined) {
@@ -1148,7 +1131,8 @@ export class Pip {
         );
         const folder = app.cwdOf(id);
 
-        await writeInstructions(app, id, told);
+        // Only what the bot's file says: the block about its skills is the prompt's, made again on every request.
+        await writeInstructions(app, id, bot.instructions);
 
         return {
             id,

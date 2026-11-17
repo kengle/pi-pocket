@@ -8,8 +8,17 @@
 import { statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { getDocsPath, loadProjectContextFiles, type Skill } from "@earendil-works/pi-coding-agent";
-import { defineExtension, type PromptInput, section } from "@earendil-works/pi-durable";
+import {
+    type ConversationId,
+    defineExtension,
+    type PromptInput,
+    type PromptSection,
+    section,
+    wrapSection,
+} from "@earendil-works/pi-durable";
+import { botSkillsNow } from "../bots.ts";
 import { APP_ROOT } from "../config.ts";
+import { hubHas } from "../hub.ts";
 import type { PocketHost } from "../host.ts";
 import { readProjectTrust } from "../skills.ts";
 import { workspaceScheme } from "../paths.ts";
@@ -82,6 +91,48 @@ export function formatSkills(skills: readonly Skill[]): string {
 
 const STALE_MS = 30_000;
 
+/** The block's first lines, the same bytes on every request: only the list at its end changes with the bot's skills. */
+const BOT_SKILLS = `Bot skills
+This bot is predefined with skills from the hub. Read each one with skills_get
+before you use it. This session's own skills live in .pi-pocket/skills: never
+give one of them a name that is already in this list.`;
+
+/**
+ * The block a bot's session gets after its instructions: the fixed lines, the names its file gives in that order, and
+ * the session's own skills it shadows this turn. No names the hub has, no block.
+ */
+export function botSkillsBlock(names: readonly string[], ignored: readonly string[]): string {
+    if (names.length === 0) {
+        return "";
+    }
+
+    const block = `${BOT_SKILLS}\nThis bot has: ${names.join(", ")}.`;
+
+    return ignored.length === 0
+        ? block
+        : `${block}\nIgnored this session's skills: ${ignored
+              .map((name) => `${name} (a predefined skill has that name)`)
+              .join(", ")}.`;
+}
+
+/** Where the block that versions before this one wrote into instructions starts. */
+const OLD_BLOCK = "\n\nSkills of the skills hub (hub @ ";
+
+/** Instructions without the block versions before this one wrote into them: what the session is really told. */
+export function stripHubBlock(text: string): string {
+    const at = text.indexOf(OLD_BLOCK);
+
+    return at === -1 ? text : text.slice(0, at);
+}
+
+/** Whether stored instructions carry that block: what the count of older sessions goes by. */
+export function hasHubBlock(text: string): boolean {
+    return text.includes(OLD_BLOCK);
+}
+
+/** Bot skills the hub does not have, said once each: a prompt is built on every request, and a line each time is noise. */
+const missingSaid = new Set<string>();
+
 type Resources = {
     at: number;
     trust: number;
@@ -118,8 +169,9 @@ export default function createPrompt(host: PocketHost) {
         return new Set([...trust.ownSkills, ...trust.skills].map((each) => each.name)).size;
     };
 
-    const load = (cwd: string): Resources => {
-        const cached = resources.get(cwd);
+    const load = (cwd: string, skip: ReadonlySet<string> = new Set()): Resources => {
+        const key = skip.size === 0 ? cwd : `${cwd}\u0000${[...skip].sort().join(",")}`;
+        const cached = resources.get(key);
         const trust = trustChanged();
 
         if (cached !== undefined && Date.now() - cached.at < STALE_MS && cached.trust === trust) {
@@ -145,7 +197,7 @@ export default function createPrompt(host: PocketHost) {
         }
 
         try {
-            const text = formatSkills(host.skills(cwd));
+            const text = formatSkills(host.skills(cwd).filter((skill) => !skip.has(skill.name)));
             // Skills the project holds but Pi was not told to trust: Pi must not think they are there.
             const kept = untrusted(cwd);
 
@@ -161,9 +213,41 @@ export default function createPrompt(host: PocketHost) {
 
         const fresh = { at: Date.now(), trust, context, skills };
 
-        resources.set(cwd, fresh);
+        resources.set(key, fresh);
 
         return fresh;
+    };
+
+    /**
+     * The names of a bot's skills as its file says them now, in that order, and the session's own skills of the same
+     * names, which are never given: a predefined name is the bot's. Names the hub does not have stay out, and are said
+     * once. Read on every request: a skill added to the bot's file shows at the next one.
+     */
+    const botNames = (id: ConversationId): { names: string[]; skipped: Set<string> } => {
+        const bot = host.botOf(id);
+        const skills = bot === undefined ? undefined : botSkillsNow(host.dataDir, bot);
+        const folder = host.hubFolder();
+        const names: string[] = [];
+
+        for (const name of skills ?? []) {
+            if (hubHas(folder, name)) {
+                names.push(name);
+                continue;
+            }
+
+            const key = `${bot}/${name}`;
+
+            if (bot !== undefined && !missingSaid.has(key)) {
+                missingSaid.add(key);
+                host.notice(
+                    "warning",
+                    `The bot ${bot} names the skill ${name}, and the skills hub has none of that name: it is left out.`,
+                    id,
+                );
+            }
+        }
+
+        return { names, skipped: new Set(names) };
     };
 
     const cwdOf = (input: PromptInput) => input.env?.cwd ?? input.agent.cwd ?? process.cwd();
@@ -179,9 +263,14 @@ export default function createPrompt(host: PocketHost) {
             section("project_context", (input) =>
                 local(input) ? load(cwdOf(input)).context : undefined,
             ),
-            section("skills", (input) => (local(input) ? load(cwdOf(input)).skills : undefined), {
-                tag: false,
-            }),
+            section(
+                "skills",
+                (input) =>
+                    local(input)
+                        ? load(cwdOf(input), botNames(input.conversationId).skipped).skills
+                        : undefined,
+                { tag: false },
+            ),
             section("environment", (input) => {
                 const base = `Working directory: ${cwdOf(input)}\nPlatform: ${process.platform}`;
 
@@ -196,6 +285,31 @@ export default function createPrompt(host: PocketHost) {
 
                 return `${base}\nToday: ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
             }),
+        ],
+        // The instructions and the bot's block go out as one: the stored instructions are the base, the block is made
+        // again on every request and never written back, so a person's own words there stay theirs.
+        wraps: [
+            wrapSection("instructions", (each: PromptSection) => ({
+                ...each,
+                render: async (input, context) => {
+                    const stored = (await each.render(input, context)) ?? "";
+                    const base = stripHubBlock(stored);
+                    const id = input.conversationId;
+
+                    if (!local(input) || host.botOf(id) === undefined) {
+                        return base === "" ? undefined : base;
+                    }
+
+                    const { names, skipped } = botNames(id);
+                    const ignored = host
+                        .skills(cwdOf(input))
+                        .map((skill) => skill.name)
+                        .filter((name) => skipped.has(name));
+                    const block = botSkillsBlock(names, ignored);
+
+                    return block === "" ? base || undefined : [base, block].join("\n\n").trim();
+                },
+            })),
         ],
     });
 }

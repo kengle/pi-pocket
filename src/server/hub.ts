@@ -7,7 +7,7 @@
  * unless the owner sets `hubPath` in the skills-hub extension's settings.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 /** One skill as the hub holds it, and as its `SKILL.md` says what it is for. */
@@ -85,6 +85,65 @@ function descriptionOf(text: string): string {
     return parts.join(" ").trim();
 }
 
+/** The newest of git's own pointers: HEAD, the ref it names, and packed refs. 0 when none is readable. */
+function headStamp(folder: string): number {
+    const git = join(folder, ".git");
+    const files = [join(git, "HEAD"), join(git, "packed-refs")];
+
+    try {
+        const match = /^ref:\s*(\S+)$/.exec(readFileSync(join(git, "HEAD"), "utf8").trim());
+
+        if (match !== null) {
+            files.push(join(git, match[1]!));
+        }
+    } catch {
+        // Not a repository, or no HEAD to read: `headOf` says "none".
+    }
+
+    let stamp = 0;
+
+    for (const file of files) {
+        try {
+            stamp = Math.max(stamp, statSync(file).mtimeMs);
+        } catch {
+            // A pointer that is not there changes nothing.
+        }
+    }
+
+    return stamp;
+}
+
+const heads = new Map<string, { stamp: number; head: string }>();
+
+/**
+ * The hub's commit, short, reused while git's own pointers are unchanged: a session's prompt asks for it on every
+ * request, and `git rev-parse` is a process each time. A hub whose pointers cannot be read runs it anyway.
+ */
+export function hubHead(folder: string): string {
+    const stamp = headStamp(folder);
+
+    if (stamp === 0) {
+        return headOf(folder);
+    }
+
+    const cached = heads.get(folder);
+
+    if (cached !== undefined && cached.stamp === stamp) {
+        return cached.head;
+    }
+
+    const head = headOf(folder);
+
+    heads.set(folder, { stamp, head });
+
+    return head;
+}
+
+/** Whether the hub has a skill of that name now: its folder has a `SKILL.md`. */
+export function hubHas(folder: string, name: string): boolean {
+    return existsSync(join(folder, "skills", name, "SKILL.md"));
+}
+
 /** The hub's skills, read from disk now: a folder under `skills/` with a `SKILL.md` is one. */
 export function readHub(folder: string): Hub {
     const skills = new Map<string, HubSkill>();
@@ -115,28 +174,4 @@ export function readHub(folder: string): Hub {
     }
 
     return { folder, head: headOf(folder), skills };
-}
-
-/**
- * The lines a bot's session is told about its hub skills: the hub's commit, one line per skill with what it is for, and
- * that the project's own copy of a skill wins, and that a skill is read before it is used.
- */
-export function hubLines(hub: Hub, names: readonly string[]): string[] {
-    const lines = names
-        .map((name) => hub.skills.get(name))
-        .filter((skill): skill is HubSkill => skill !== undefined)
-        .map(
-            (skill) =>
-                `- ${skill.name}: ${skill.description || "(no description in its SKILL.md)"}`,
-        );
-
-    if (lines.length === 0) {
-        return [];
-    }
-
-    return [
-        `Skills of the skills hub (hub @ ${hub.head}), which this session reads with skills_get before it uses one:`,
-        ...lines,
-        "A skill of the same name in this project's .pi-pocket/skills is the one to follow: there, the project's copy replaces the hub's.",
-    ];
 }

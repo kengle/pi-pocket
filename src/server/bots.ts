@@ -6,7 +6,7 @@
  * the session's folder: the session reads a hub skill where the hub keeps it, and the person's own copy of a skill in the
  * project stays theirs. Whether the model works here is for the caller to check: it knows the models signed in.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { MAX_INSTRUCTIONS } from "./commands.ts";
@@ -181,4 +181,55 @@ export function botSkills(hub: Hub, skills: readonly string[]): BotInstall {
     }
 
     return { hub: found, missing };
+}
+
+/** The skills each bot file last said, by the file's time and size: unchanged, unchanged answer. */
+const nowCache = new Map<string, { stamp: string; skills: string[] | undefined }>();
+
+/**
+ * A bot's skills as its file says them now, read again only when the file changed: a session the bot started asks its
+ * prompt for them on every request, and the file is usually the same one. Undefined when the file cannot be read or is
+ * not a bot's: the session then gets no block, as one started without a bot.
+ */
+export function botSkillsNow(dataDir: string, bot: string): string[] | undefined {
+    const name = bot.trim();
+
+    if (!isOneName(name)) {
+        return undefined;
+    }
+
+    const file = join(dataDir, "bots", `${name}.json`);
+    let stamp: string;
+
+    try {
+        const info = statSync(file);
+
+        stamp = `${String(info.mtimeMs)}:${String(info.size)}`;
+    } catch {
+        return undefined;
+    }
+
+    const cached = nowCache.get(file);
+
+    if (cached !== undefined && cached.stamp === stamp) {
+        return cached.skills;
+    }
+
+    let skills: string[] | undefined;
+
+    try {
+        const value = JSON.parse(readFileSync(file, "utf8")) as { skills?: unknown };
+
+        skills = Array.isArray(value.skills)
+            ? value.skills
+                  .map((each) => (typeof each === "string" ? each.trim() : ""))
+                  .filter(isOneName)
+            : [];
+    } catch {
+        skills = undefined;
+    }
+
+    nowCache.set(file, { stamp, skills });
+
+    return skills;
 }

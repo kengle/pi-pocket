@@ -148,6 +148,7 @@ import {
     type SkillSources,
     type TrustChoice,
 } from "./skills.ts";
+import { hubFolder } from "./hub.ts";
 import { Spend } from "./spend.ts";
 import { Transcripts } from "./transcripts.ts";
 import { Watches } from "./watches.ts";
@@ -879,6 +880,9 @@ export class PocketApp {
                 }
             },
             skills: (cwd) => this.skills(cwd),
+            botOf: (id) => this.sessionMeta(id)?.bot,
+            hubFolder: () =>
+                hubFolder(this.dataDir, this.config.extensionSettings("skills-hub").hubPath),
             resolveModel: (spec) => resolveModel(this.models, spec, this.signInNeeded),
             subagentModels: () => this.config.subagentModels,
             modelProblem: (ref, fresh) => this.providers.problem(ref, fresh),
