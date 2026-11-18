@@ -12,7 +12,15 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { addServer, loadConfig, NewServerError } from "../src/server/extensions/mcp/config.ts";
+import {
+    addServer,
+    editServer,
+    loadConfig,
+    needsApproval,
+    NewServerError,
+    removeServer,
+    settingsStore,
+} from "../src/server/extensions/mcp/config.ts";
 
 after(() => {
     cleanUp();
@@ -35,8 +43,9 @@ async function refused(
     agentDir: string,
     input: Record<string, unknown>,
     status: number,
+    call: (agentDir: string, input: never) => Promise<void> = addServer,
 ): Promise<void> {
-    await assert.rejects(addServer(agentDir, input as never), (error: unknown) => {
+    await assert.rejects(call(agentDir, input as never), (error: unknown) => {
         assert.ok(error instanceof NewServerError);
         assert.equal(error.status, status);
 
@@ -149,4 +158,159 @@ test("an mcp.json that is not read leaves no change, and no half-written file", 
     writeFileSync(file, shape);
     await refused(agentDir, { name: "ok", url: "https://x.example/mcp" }, 409);
     assert.equal(readFileSync(file, "utf8"), shape);
+});
+
+test("a server deleted goes from mcp.json, and every other entry stays whole", async () => {
+    const { agentDir, file } = agentFolder(
+        JSON.stringify({
+            mcpServers: {
+                "tencent-docs": { type: "http", url: "https://docs.example/mcp", timeout: 30 },
+                gone: { type: "http", url: "https://gone.example/mcp" },
+            },
+            other: true,
+        }),
+    );
+
+    await removeServer(agentDir, "gone");
+
+    const written = JSON.parse(readFileSync(file, "utf8"));
+
+    assert.deepEqual(Object.keys(written.mcpServers), ["tencent-docs"]);
+    assert.deepEqual(written.mcpServers["tencent-docs"], {
+        type: "http",
+        url: "https://docs.example/mcp",
+        timeout: 30,
+    });
+    assert.equal(written.other, true);
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+
+    // A name that is not there is the answer, and the file keeps every entry it had.
+    const before = readFileSync(file, "utf8");
+
+    await refused(agentDir, { name: "absent" }, 404, (dir, input) =>
+        removeServer(dir, (input as { name: string }).name),
+    );
+    assert.equal(readFileSync(file, "utf8"), before);
+});
+
+test("deleting a server forgets its approval and switch, so the same name asks again", async () => {
+    const { agentDir } = agentFolder(JSON.stringify({ mcpServers: {} }));
+
+    await addServer(agentDir, { name: "example", url: "https://example.com/mcp" });
+    const store = settingsStore(agentDir);
+
+    await store.update((settings) => {
+        settings.servers = {
+            example: { approved: "abc", parts: {}, planMode: true },
+            other: { approved: "def" },
+        };
+    });
+
+    // The page's delete: the entry, then the state that approved it.
+    await removeServer(agentDir, "example");
+    await store.update((settings) => {
+        const next = { ...settings.servers };
+
+        delete next.example;
+        settings.servers = next;
+    });
+
+    const settings = await store.read();
+
+    assert.equal(settings.servers.example, undefined, "no approval is left behind");
+    assert.deepEqual(settings.servers.other, { approved: "def" }, "another server's state stays");
+});
+
+test("a server edited keeps its name, its other keys, and loses its approval when its entry moved", async () => {
+    const { agentDir, file } = agentFolder(
+        JSON.stringify({
+            mcpServers: {
+                example: {
+                    type: "http",
+                    url: "https://example.com/mcp",
+                    description: "Before",
+                    timeout: 20,
+                },
+            },
+        }),
+    );
+
+    await editServer(agentDir, "example", {
+        url: "https://other.example/mcp",
+        description: "After",
+        headers: { "X-Key": "abc" },
+    });
+
+    const written = JSON.parse(readFileSync(file, "utf8"));
+
+    assert.deepEqual(written.mcpServers.example, {
+        type: "http",
+        url: "https://other.example/mcp",
+        description: "After",
+        timeout: 20,
+        headers: { "X-Key": "abc" },
+    });
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+
+    // The fingerprint follows the entry: an approval for the old one no longer covers it.
+    const before = (await loadConfig(agentDir)).servers[0]!;
+
+    assert.equal(needsApproval(before, { approved: "an-approval-of-the-entry-before" }), true);
+    assert.equal(needsApproval(before, { approved: before.fingerprint }), false);
+
+    // Empty header rows mean none: the ones before go.
+    await editServer(agentDir, "example", { url: "https://other.example/mcp", headers: {} });
+    assert.equal(
+        "headers" in (JSON.parse(readFileSync(file, "utf8")).mcpServers.example as object),
+        false,
+    );
+});
+
+test("an edit refuses a new name, a bad address, a header with a newline, and a name not there", async () => {
+    const existing = JSON.stringify({
+        mcpServers: { example: { type: "http", url: "https://example.com/mcp" } },
+    });
+    const { agentDir, file } = agentFolder(existing);
+
+    const denied = async (what: string, input: object, status: number) => {
+        await assert.rejects(editServer(agentDir, "example", input as never), (error: unknown) => {
+            assert.ok(error instanceof NewServerError, what);
+            assert.equal(error.status, status, what);
+
+            return true;
+        });
+    };
+
+    await denied("a new name", { name: "renamed", url: "https://x.example/mcp" }, 400);
+    await denied("a bad address", { url: "ftp://x.example/mcp" }, 400);
+    await denied(
+        "a header with a newline",
+        { url: "https://x.example/mcp", headers: { X: "a\nb" } },
+        400,
+    );
+    assert.equal(readFileSync(file, "utf8"), existing, "the file is as it was");
+
+    await assert.rejects(
+        editServer(agentDir, "absent", { url: "https://x.example/mcp" }),
+        (error: unknown) => {
+            assert.ok(error instanceof NewServerError);
+            assert.equal(error.status, 404);
+
+            return true;
+        },
+    );
+});
+
+test("an edit leaves a broken mcp.json alone, and no temporary file", async () => {
+    const broken = "{ not json";
+    const { agentDir, file } = agentFolder(broken);
+
+    await refused(agentDir, { url: "https://x.example/mcp" }, 409, (dir, input) =>
+        editServer(dir, "example", input),
+    );
+    assert.equal(readFileSync(file, "utf8"), broken);
+    assert.deepEqual(
+        readdirSync(agentDir).filter((each) => each.endsWith(".tmp")),
+        [],
+    );
 });

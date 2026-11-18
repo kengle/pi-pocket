@@ -653,6 +653,96 @@ export class NewServerError extends Error {
 const NEW_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const folded = (name: string) => name.replaceAll("_", "-");
 
+/** The address and the headers a page may set: one address, one line each, http(s) only. */
+function checked(input: { url?: unknown; headers?: unknown }): {
+    url: string;
+    headers: Record<string, string>;
+} {
+    const url = typeof input.url === "string" ? input.url.trim() : "";
+
+    if (!/^https?:\/\//i.test(url) || /\s/.test(url)) {
+        throw new NewServerError(400, "A server's address starts with http:// or https://");
+    }
+
+    const headers: Record<string, string> = {};
+
+    for (const [key, value] of Object.entries(
+        isRecord(input.headers) ? (input.headers as Record<string, string>) : {},
+    )) {
+        const header = String(key).trim();
+        const text = String(value);
+
+        if (header === "" || /[\r\n]/.test(header) || /[\r\n]/.test(text)) {
+            throw new NewServerError(400, "A header's name and value are one line each");
+        }
+
+        headers[header] = text;
+    }
+
+    return { url, headers };
+}
+
+/** `mcp.json` as it is: its entries, or `{}` when it is not there yet. A file that is not its shape is refused. */
+async function readMcp(file: string): Promise<Record<string, unknown>> {
+    let text: string;
+
+    try {
+        text = await readFile(file, "utf8");
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            return {};
+        }
+
+        throw new NewServerError(409, `${file} cannot be read: ${(error as Error).message}`);
+    }
+
+    if (text.trim() === "") {
+        return {};
+    }
+
+    let parsed: unknown;
+
+    try {
+        parsed = JSON.parse(text.replace(/^\uFEFF/, ""));
+    } catch (error) {
+        throw new NewServerError(409, `${file} is not valid JSON: ${(error as Error).message}`);
+    }
+
+    if (!isRecord(parsed)) {
+        throw new NewServerError(409, `${file} does not hold a JSON object`);
+    }
+
+    if (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers)) {
+        throw new NewServerError(409, `${file}: expected an object with an "mcpServers" object`);
+    }
+
+    return parsed;
+}
+
+/** The entries of `mcp.json`, as the object it holds them in. */
+function entriesOf(parsed: Record<string, unknown>): Record<string, unknown> {
+    const found = parsed.mcpServers ?? {};
+
+    parsed.mcpServers = found;
+
+    return found as Record<string, unknown>;
+}
+
+/** Write `mcp.json` whole: a file beside it, then over it, 0600. A failure leaves the old file as it was. */
+async function writeMcp(file: string, parsed: Record<string, unknown>): Promise<void> {
+    const temporary = `${file}.${randomUUID()}.tmp`;
+
+    try {
+        await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+        await writeFile(temporary, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 });
+        await rename(temporary, file);
+    } catch (error) {
+        await rm(temporary, { force: true }).catch(() => undefined);
+
+        throw new NewServerError(500, `${file} cannot be written: ${(error as Error).message}`);
+    }
+}
+
 /**
  * Add an HTTP server to `<agentDir>/mcp.json`, as the owner asks on the MCP page: the file is read, the entry merged
  * in, and the whole written to a file beside it and renamed over it, so a failure leaves the old file as it was. Only
@@ -668,80 +758,87 @@ export async function addServer(agentDir: string, input: NewServer): Promise<voi
         );
     }
 
-    const url = input.url.trim();
-
-    if (!/^https?:\/\//i.test(url) || /\s/.test(url)) {
-        throw new NewServerError(400, "A server's address starts with http:// or https://");
-    }
-
-    const description = input.description?.trim();
-    const headers: Record<string, string> = {};
-
-    for (const [key, value] of Object.entries(input.headers ?? {})) {
-        const header = key.trim();
-
-        if (header === "" || /[\r\n]/.test(header) || /[\r\n]/.test(value)) {
-            throw new NewServerError(400, "A header's name and value are one line each");
-        }
-
-        headers[header] = value;
-    }
-
+    const { url, headers } = checked(input);
+    const description = typeof input.description === "string" ? input.description.trim() : "";
     const file = join(agentDir, "mcp.json");
-    let parsed: Record<string, unknown> = {};
+    const parsed = await readMcp(file);
+    const servers = entriesOf(parsed);
 
-    try {
-        const text = await readFile(file, "utf8");
-
-        if (text.trim() !== "") {
-            const value: unknown = JSON.parse(text.replace(/^\uFEFF/, ""));
-
-            if (!isRecord(value)) {
-                throw new NewServerError(409, `${file} does not hold a JSON object`);
-            }
-
-            parsed = value;
-        }
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-            if (error instanceof NewServerError) {
-                throw error;
-            }
-
-            throw new NewServerError(409, `${file} cannot be read: ${(error as Error).message}`);
-        }
-    }
-
-    const existing = parsed.mcpServers;
-
-    if (existing !== undefined && !isRecord(existing)) {
-        throw new NewServerError(409, `${file}: expected an object with an "mcpServers" object`);
-    }
-
-    const servers = (existing ?? {}) as Record<string, unknown>;
-    const taken = Object.keys(servers).some((each) => folded(each) === folded(name));
-
-    if (taken) {
+    if (Object.keys(servers).some((each) => folded(each) === folded(name))) {
         throw new NewServerError(409, `mcp.json already has a server named ${name}`);
     }
 
     servers[name] = {
         type: "http",
         url,
-        ...(description === undefined || description === "" ? {} : { description }),
+        ...(description === "" ? {} : { description }),
         ...(Object.keys(headers).length === 0 ? {} : { headers }),
     };
-    parsed.mcpServers = servers;
 
-    const temporary = `${file}.${randomUUID()}.tmp`;
+    await writeMcp(file, parsed);
+}
 
-    try {
-        await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-        await writeFile(temporary, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 });
-        await rename(temporary, file);
-    } catch (error) {
-        await rm(temporary, { force: true }).catch(() => undefined);
-
-        throw new NewServerError(500, `${file} cannot be written: ${(error as Error).message}`);
+/**
+ * Change a server's address, note, or headers in `mcp.json`, and nothing else about it: its name is what the file and
+ * Pi Pocket's approval go by, so a name that differs is refused. Other keys of the entry (a timeout, an exposure, an
+ * OAuth client) stay as they are.
+ */
+export async function editServer(
+    agentDir: string,
+    name: string,
+    input: { name?: unknown; url?: unknown; description?: unknown; headers?: unknown },
+): Promise<void> {
+    if (typeof input.name === "string" && input.name.trim() !== name) {
+        throw new NewServerError(
+            400,
+            "A server's name does not change here: delete it and add the new one, so its approval is asked again",
+        );
     }
+
+    const { url, headers } = checked(input);
+    const description = typeof input.description === "string" ? input.description.trim() : "";
+    const file = join(agentDir, "mcp.json");
+    const parsed = await readMcp(file);
+    const servers = entriesOf(parsed);
+    const current = servers[name];
+
+    if (current === undefined) {
+        throw new NewServerError(404, `mcp.json has no server named ${name}`);
+    }
+
+    const entry: Record<string, unknown> = {
+        ...(isRecord(current) ? current : {}),
+        type: "http",
+        url,
+        ...(description === "" ? {} : { description }),
+    };
+
+    // No headers means none at all, not the ones before.
+    if (Object.keys(headers).length === 0) {
+        delete entry.headers;
+    } else {
+        entry.headers = headers;
+    }
+
+    servers[name] = entry;
+    await writeMcp(file, parsed);
+}
+
+/** Remove a server's entry from `mcp.json`, and nothing else: every other entry and key stays as it is. */
+export async function removeServer(agentDir: string, name: string): Promise<void> {
+    const file = join(agentDir, "mcp.json");
+    const parsed = await readMcp(file);
+    const servers = entriesOf(parsed);
+
+    if (!Object.hasOwn(servers, name)) {
+        throw new NewServerError(404, `mcp.json has no server named ${name}`);
+    }
+
+    delete servers[name];
+    await writeMcp(file, parsed);
+}
+
+/** Whether the owner's approval covers this entry as it is now: an edited address or header asks again. */
+export function needsApproval(entry: ServerEntry, settings: ServerSettings): boolean {
+    return entry.fingerprint !== settings.approved;
 }

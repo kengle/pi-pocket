@@ -144,7 +144,7 @@ export default function setup(pocket) {
     }
 
     /** One server: its switch, its entry, its state, what to do, and its tools. */
-    function ServerCard({ server, act, busy }) {
+    function ServerCard({ server, act, busy, onEdit, onDelete }) {
         const path = `servers/${encodeURIComponent(server.name)}`;
         const run = (to, body) => act(`${path}/${to}`, body).catch(() => undefined);
         const [label, kind] = STATUS[server.status] ?? [server.status, ""];
@@ -239,6 +239,18 @@ export default function setup(pocket) {
                                     </button>`
                                   : null
                           }
+                      </div>`
+                    : null
+            }
+            ${
+                server.kind === "http"
+                    ? html`<div class="mcp-row">
+                          <button class="button" disabled=${busy} onClick=${() => onEdit(server)}>
+                              Edit
+                          </button>
+                          <button class="button" disabled=${busy} onClick=${() => onDelete(server)}>
+                              Delete
+                          </button>
                       </div>`
                     : null
             }
@@ -358,11 +370,158 @@ export default function setup(pocket) {
         </section>`;
     }
 
+    /** The form that changes a server already in mcp.json: its address, its note, and its headers. Its name stays. */
+    function EditServer({ server, act, busy, onClose }) {
+        const [url, setUrl] = useState(server.url ?? "");
+        const [description, setDescription] = useState(server.description ?? "");
+        const [keys, setKeys] = useState(["", ""]);
+        const [values, setValues] = useState(["", ""]);
+        const [error, setError] = useState(null);
+        const [needsApproval, setNeedsApproval] = useState(false);
+
+        const one = (list, index, value) => list.map((each, at) => (at === index ? value : each));
+
+        const save = async () => {
+            setError(null);
+
+            const headers = {};
+
+            keys.forEach((key, index) => {
+                if (key.trim() !== "") {
+                    headers[key.trim()] = values[index] ?? "";
+                }
+            });
+
+            try {
+                const answer = await act(`servers/${encodeURIComponent(server.name)}`, {
+                    url,
+                    description,
+                    headers,
+                });
+
+                setNeedsApproval(answer?.needsApproval === true);
+
+                if (answer?.needsApproval !== true) {
+                    onClose();
+                }
+            } catch (failure) {
+                setError(failure.message);
+            }
+        };
+
+        return html`<section class="mcp-server">
+            <div class="mcp-head">
+                <div class="mcp-title">Edit ${server.name}</div>
+            </div>
+            <p class="small muted">
+                Its name stays: a new name is a new server, which asks for approval again.
+            </p>
+            <div class="mcp-row">
+                <input
+                    class="mcp-input"
+                    aria-label="The server's address"
+                    placeholder="https://example.com/mcp"
+                    value=${url}
+                    onInput=${(event) => setUrl(event.currentTarget.value)}
+                />
+            </div>
+            <div class="mcp-row">
+                <input
+                    class="mcp-input"
+                    aria-label="What the server is for"
+                    placeholder="what it is for (optional)"
+                    value=${description}
+                    onInput=${(event) => setDescription(event.currentTarget.value)}
+                />
+            </div>
+            ${[0, 1].map(
+                (index) =>
+                    html`<div class="mcp-row" key=${index}>
+                        <input
+                            class="mcp-input"
+                            aria-label="A header's name"
+                            placeholder="header name (optional)"
+                            value=${keys[index]}
+                            onInput=${(event) =>
+                                setKeys(one(keys, index, event.currentTarget.value))}
+                        />
+                        <input
+                            class="mcp-input"
+                            aria-label="A header's value"
+                            placeholder="header value"
+                            value=${values[index]}
+                            onInput=${(event) =>
+                                setValues(one(values, index, event.currentTarget.value))}
+                        />
+                    </div>`,
+            )}
+            <p class="small muted">
+                The headers you fill replace all of them: empty rows mean this server has none.
+                Their old values are not shown here.
+            </p>
+            ${
+                needsApproval
+                    ? html`<div class="small mcp-warn">
+                          Its address or a header changed: turn it on again in its card to approve
+                          the new entry.
+                      </div>`
+                    : null
+            }
+            ${error ? html`<div class="error-box">${error}</div>` : null}
+            <div class="mcp-row">
+                <button
+                    class="button primary"
+                    disabled=${busy || url.trim() === ""}
+                    onClick=${save}
+                >
+                    Save
+                </button>
+                <button class="button" disabled=${busy} onClick=${onClose}>Cancel</button>
+            </div>
+        </section>`;
+    }
+
+    /** The question a Delete asks: the server's name and where it points, then the answer. */
+    function DeleteServer({ server, act, busy, onClose }) {
+        const [error, setError] = useState(null);
+
+        const remove = async () => {
+            setError(null);
+
+            try {
+                await act(`servers/${encodeURIComponent(server.name)}`, undefined, {
+                    method: "DELETE",
+                });
+                onClose();
+            } catch (failure) {
+                setError(failure.message);
+            }
+        };
+
+        return html`<section class="mcp-server">
+            <div class="mcp-head">
+                <div class="mcp-title">Delete ${server.name}?</div>
+            </div>
+            <p class="small muted">
+                It goes from mcp.json, with its approval and switch. Add it again and you approve it
+                again. ${server.target}
+            </p>
+            ${error ? html`<div class="error-box">${error}</div>` : null}
+            <div class="mcp-row">
+                <button class="button primary" disabled=${busy} onClick=${remove}>Delete</button>
+                <button class="button" disabled=${busy} onClick=${onClose}>Cancel</button>
+            </div>
+        </section>`;
+    }
+
     /** The page: what mcp.json has, and each server. */
     function Servers() {
         const [state, setState] = useState(null);
         const [error, setError] = useState(null);
         const [busy, setBusy] = useState(false);
+        // The server the page edits or asks to delete: one panel at a time, by name.
+        const [editing, setEditing] = useState(null);
+        const [deleting, setDeleting] = useState(null);
         // Answers can come back out of order: only the newest request sets the state.
         const latest = useRef(0);
 
@@ -388,13 +547,13 @@ export default function setup(pocket) {
          * Do one thing on the server, then show the new state. A sign-in opens its page from a link. With `quiet`, the
          * caller shows the error.
          */
-        const act = useCallback(async (path, body, { quiet = false } = {}) => {
+        const act = useCallback(async (path, body, { quiet = false, method } = {}) => {
             setBusy(true);
 
             const request = ++latest.current;
 
             try {
-                const answer = await pocket.api(path, body);
+                const answer = await pocket.api(path, body, method ? { method } : undefined);
 
                 if (answer && Array.isArray(answer.servers)) {
                     show(request, answer);
@@ -464,8 +623,32 @@ export default function setup(pocket) {
                                   server=${server}
                                   act=${act}
                                   busy=${busy}
+                                  onEdit=${setEditing}
+                                  onDelete=${setDeleting}
                               />`,
                       )
+            }
+            ${
+                editing === null
+                    ? null
+                    : html`<${EditServer}
+                          key=${editing.name}
+                          server=${editing}
+                          act=${act}
+                          busy=${busy}
+                          onClose=${() => setEditing(null)}
+                      />`
+            }
+            ${
+                deleting === null
+                    ? null
+                    : html`<${DeleteServer}
+                          key=${deleting.name}
+                          server=${deleting}
+                          act=${act}
+                          busy=${busy}
+                          onClose=${() => setDeleting(null)}
+                      />`
             }
             <${AddServer} act=${act} busy=${busy} />
         </div>`;

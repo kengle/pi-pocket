@@ -27,6 +27,9 @@ import type { ExtensionWeb, PocketHost } from "../host.ts";
 import {
     addServer,
     changedParts,
+    editServer,
+    needsApproval,
+    removeServer,
     type LoadedConfig,
     loadConfig,
     type NewServer,
@@ -102,6 +105,8 @@ interface ServerView {
     /** The command and its arguments, or the address without its query. */
     target: string;
     description?: string;
+    /** An HTTP server's address, as mcp.json has it: the page's edit form starts from it. */
+    url?: string;
     /** The fingerprint of the entry as the page shows it: the switch turns on only this entry. */
     fingerprint: string;
     /** Each part of the entry (literal values of `env`, `headers`, and secrets masked), and whether it changed. */
@@ -309,6 +314,36 @@ class Servers {
         return true;
     }
 
+    /** Stop a server's connection now: before its entry changes or goes, so nothing runs on a copy that is gone. */
+    async stop(name: string): Promise<void> {
+        const server = this.live.get(name);
+
+        if (server === undefined) {
+            return;
+        }
+
+        this.live.delete(name);
+        await server.close();
+    }
+
+    /**
+     * Forget a server's approval and switch. The entry and these go together: an entry that comes back under the same
+     * name must not look approved, or adding it again would skip the owner's answer.
+     */
+    async forgetApproval(name: string): Promise<void> {
+        await this.#settings.update((settings) => {
+            const next = { ...settings.servers };
+
+            delete next[name];
+            settings.servers = next;
+        });
+    }
+
+    /** Whether the owner's approval still covers this entry, as the page shows it. */
+    approvedFor(entry: ServerEntry): boolean {
+        return !needsApproval(entry, this.settings.servers[entry.name] ?? {});
+    }
+
     /** Let plan mode trust the read-only marks of a server that is on, for its entry as it is. False when it is not on. */
     async setPlanMode(name: string, on: boolean): Promise<boolean> {
         const entry = this.entry(name);
@@ -404,6 +439,7 @@ class Servers {
             ...(entry.config.description === undefined
                 ? {}
                 : { description: entry.config.description }),
+            ...("url" in entry.config ? { url: entry.config.url } : {}),
             fingerprint: entry.fingerprint,
             parts: entry.parts.map(({ key, text }) => ({
                 key,
@@ -856,6 +892,60 @@ export default function createMcp(host: PocketHost, web: ExtensionWeb) {
             throw error;
         });
 
+        await servers.load();
+
+        return servers.view();
+    });
+
+    /**
+     * Change a server the owner added: its address, its note, and its headers. Its name stays: a new name is a new
+     * server, which asks for approval again. An entry whose fingerprint moved (an address or a header) loses the
+     * approval it had and its running connection, so the page says it needs approving.
+     */
+    web.route("PUT", "servers/:name", async ({ params, body }) => {
+        const name = params.name!;
+
+        await editServer(host.agentDir, name, body as Record<string, unknown>).catch(
+            (error: unknown) => {
+                if (error instanceof NewServerError) {
+                    throw web.error(error.status, error.message);
+                }
+
+                throw error;
+            },
+        );
+
+        await servers.load();
+
+        const entry = servers.entry(name);
+        const approved = entry === undefined ? false : servers.approvedFor(entry);
+
+        if (entry !== undefined && !approved) {
+            await servers.stop(name);
+            await servers.forgetApproval(name);
+            await servers.load();
+        }
+
+        return { ...servers.view(), needsApproval: entry !== undefined && !approved };
+    });
+
+    /**
+     * Delete a server: its connection goes first, then its entry, then its approval and switch. Both go, so an entry
+     * added again under the same name is asked about again.
+     */
+    web.route("DELETE", "servers/:name", async ({ params }) => {
+        const name = params.name!;
+
+        await removeServer(host.agentDir, name).catch((error: unknown) => {
+            if (error instanceof NewServerError) {
+                throw web.error(error.status, error.message);
+            }
+
+            throw error;
+        });
+
+        await servers.stop(name);
+        await servers.forgetApproval(name);
         await servers.load();
 
         return servers.view();
