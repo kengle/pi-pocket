@@ -314,3 +314,22 @@ test("an edit leaves a broken mcp.json alone, and no temporary file", async () =
         [],
     );
 });
+
+test("the page sends PUT to change a server and DELETE to remove one", () => {
+    // The route takes PUT and DELETE only, and the page posts everything else: each of the two says its own method.
+    const page = readFileSync(
+        join(import.meta.dirname, "..", "src", "server", "extensions", "mcp", "index.js"),
+        "utf8",
+    );
+    // The two calls that pass the server's own address to the page's api: one to change it, one to remove it.
+    const calls = [
+        ...page.matchAll(
+            /act\(\s*`servers\/\$\{encodeURIComponent\(server\.name\)\}`([\s\S]{0,300})/g,
+        ),
+    ].map((match) => match[1]!);
+
+    assert.equal(calls.length, 2, "one call changes a server, one removes it");
+    assert.match(calls[0]!, /method: "PUT"/);
+    assert.doesNotMatch(calls[0]!, /method: "POST"/);
+    assert.match(calls[1]!, /method: "DELETE"/);
+});

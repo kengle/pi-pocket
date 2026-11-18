@@ -393,11 +393,12 @@ export default function setup(pocket) {
             });
 
             try {
-                const answer = await act(`servers/${encodeURIComponent(server.name)}`, {
-                    url,
-                    description,
-                    headers,
-                });
+                // PUT, not the page's default POST: changing a server is this route's answer.
+                const answer = await act(
+                    `servers/${encodeURIComponent(server.name)}`,
+                    { url, description, headers },
+                    { method: "PUT" },
+                );
 
                 setNeedsApproval(answer?.needsApproval === true);
 
