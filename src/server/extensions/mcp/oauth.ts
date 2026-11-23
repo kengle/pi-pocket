@@ -424,33 +424,6 @@ function untilTokens(store: McpOAuthStateStore, start: McpOAuthState): McpOAuthS
 }
 
 /**
- * A store that will not let a failed token exchange drop the verifier of the sign-in in flight.
- *
- * The MCP client library answers `invalid_client` or `unauthorized_client` from the token endpoint by calling
- * `invalidateCredentials("all")` and running the flow again (`flow.js:302-315`). That deletes `codeVerifier` and
- * `oauthState`, so the retry stops with "No OAuth PKCE code verifier is stored" and hides the real error.
- */
-export function keepVerifier(
-    store: McpOAuthStateStore,
-    pending: McpOAuthState,
-): McpOAuthStateStore {
-    const kept = (next: McpOAuthState): McpOAuthState => ({
-        ...next,
-        ...(next.codeVerifier === undefined && pending.codeVerifier !== undefined
-            ? { codeVerifier: pending.codeVerifier }
-            : {}),
-        ...(next.oauthState === undefined && pending.oauthState !== undefined
-            ? { oauthState: pending.oauthState }
-            : {}),
-    });
-
-    return {
-        load: () => store.load(),
-        save: (next) => store.save(kept(next)),
-    };
-}
-
-/**
  * Start a sign-in. Returns `undefined` when the stored refresh token was enough, and otherwise the sign-in, which
  * waits for the browser at the loopback callback or for a pasted address. The callback closes when it ends.
  */
@@ -560,21 +533,7 @@ export async function startSignIn(options: {
             try {
                 const { code, iss } = await Promise.race([fromBrowser, fromOwner]);
 
-                // Keep the verifier of this sign-in: a rejected token request must not turn into
-                // "No OAuth PKCE code verifier is stored" and hide the error the server sent.
-                const pending = await flowStore.load();
-                const exchange =
-                    pending === undefined
-                        ? oauth
-                        : provider(
-                              serverUrl,
-                              keepVerifier(flowStore, pending),
-                              settings,
-                              redirectUrl,
-                              () => {},
-                          );
-
-                await authorizeMcp(exchange, {
+                await authorizeMcp(oauth, {
                     ...flow,
                     authorizationCode: code,
                     ...(iss === undefined ? {} : { iss }),
